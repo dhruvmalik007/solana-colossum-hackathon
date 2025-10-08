@@ -1,0 +1,3 @@
+[workspace]
+members = ["programs/solana_prediction"]
+resolver = "2"

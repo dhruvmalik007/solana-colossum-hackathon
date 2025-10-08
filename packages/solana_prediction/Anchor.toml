@@ -1,0 +1,17 @@
+[features]
+seeds = true
+skip-lint = false
+
+[programs.localnet]
+solana_prediction = ""
+
+[registry]
+url = "https://anchor.projectserum.com"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+build = "anchor build"
+deploy = "anchor deploy"
