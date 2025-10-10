@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@repo/ui/components/ui/card";
 import { Button } from "@repo/ui/components/ui/button";
 import TVLChartClient from "../../../components/TVLChartClient";
-import TradePanel from "../../../components/TradePanel";
 import OrderBookClient from "../../../components/OrderBookClient";
 import { getProtocolDetailSlimCached } from "../../../lib/server/defillama";
 import MarketInsightsClient from "../../../components/MarketInsightsClient";
@@ -53,24 +52,15 @@ export default async function MarketPage({ params }: { params: Promise<{ slug: s
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Order book</CardTitle>
-            <CardDescription>Mocked depth for demo</CardDescription>
+            <CardDescription>Realtime order book </CardDescription>
           </CardHeader>
           <CardContent>
-            <OrderBookClient slug={slug} series={series} />
+            <OrderBookClient slug={slug} />
           </CardContent>
         </Card>
       </div>
 
       <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Trade</CardTitle>
-            <CardDescription>Prediction ticket (UI only)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TradePanel change1d={change1d} />
-          </CardContent>
-        </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Insights</CardTitle>

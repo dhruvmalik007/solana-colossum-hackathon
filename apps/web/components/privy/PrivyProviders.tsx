@@ -29,7 +29,7 @@ export function PrivyProviders({ children }: { children: any }) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || ""}
       config={{
-        loginMethods: ["wallet", "email"],
+        loginMethods: ["wallet", "email", "google"],
         appearance: {
           walletChainType: "solana-only",
           showWalletLoginFirst: true,
