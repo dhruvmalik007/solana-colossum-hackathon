@@ -56,7 +56,7 @@ export default async function MarketPage({ params }: { params: Promise<{ slug: s
             <CardDescription>Mocked depth for demo</CardDescription>
           </CardHeader>
           <CardContent>
-            <OrderBookClient series={series} />
+            <OrderBookClient slug={slug} series={series} />
           </CardContent>
         </Card>
       </div>

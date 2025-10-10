@@ -45,7 +45,7 @@
   --accent-foreground: 0 0% 98%;
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
+  --border: 240 5% 22%;
   --input: 240 3.7% 15.9%;
   --ring: 240 4.9% 83.9%;
   --chart-1: 220 70% 50%;
@@ -59,7 +59,18 @@
   border-color: hsl(var(--border));
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+@supports (font-variation-settings: normal) {
+  body {
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
 }

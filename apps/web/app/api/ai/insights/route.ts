@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateText } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
+import { generateText, LanguageModelV1 } from "ai";
+import {  openai } from "@ai-sdk/openai";
 
-const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +33,7 @@ Context:
 Goal: Provide helpful, neutral, non-financial advice insights strictly in JSON.`;
 
     const { text } = await generateText({
-      model: openai("gpt-4o-mini"),
+      model: openai("gpt-4o-mini") as unknown as LanguageModelV1,
       prompt,
     });
 

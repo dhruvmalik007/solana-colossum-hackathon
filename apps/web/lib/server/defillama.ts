@@ -36,6 +36,7 @@ export async function getSolanaProtocolsCached(): Promise<ProtocolSlim[]> {
         console.log("[getSolanaProtocolsCached] cache miss, fetching from DefiLlama");
         const res = await fetch("https://api.llama.fi/protocols", { next: { revalidate: 0 } });
         if (!res.ok) throw new Error(`DefiLlama fetch failed: ${res.status}`);
+
         const data = (await res.json()) as any[];
         console.log("[getSolanaProtocolsCached] fetched", data?.length ?? 0, "protocols");
         // Trim early to keep cache file small

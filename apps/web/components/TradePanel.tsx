@@ -2,20 +2,19 @@
 
 import { Button  } from "@repo/ui/components/ui/button";
 import { Input  } from "@repo/ui/components/ui/input";
-import { ShineBorder } from "@repo/ui/components/ui/shine-border";
 import { AnimatedBeam } from "@repo/ui/components/ui/animated-beam";
 import { Label } from "@repo/ui/components/ui/label";
 import { Card } from "@repo/ui/components/ui/card";
 import React from "react";
 
-export default function TradePanel({ change1d }: { change1d: number }) {
+export default function TradePanel({ change1d, compact = true, onPlace }: { change1d: number; compact?: boolean; onPlace?: (amount: number) => void }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const buyRef = React.useRef<HTMLButtonElement | null>(null);
   const sellRef = React.useRef<HTMLButtonElement | null>(null);
+  const [amount, setAmount] = React.useState<string>("");
 
   return (
-    <div className="relative rounded-lg border p-4">
-      <ShineBorder borderWidth={1} duration={18} shineColor={["#34d399","#a78bfa","#60a5fa"]} />
+    <div className="relative p-2">
       <div ref={containerRef} className="relative">
         <div className="grid grid-cols-2 gap-2">
           <Button ref={buyRef} variant="outline" className="h-10">Buy</Button>
@@ -41,10 +40,11 @@ export default function TradePanel({ change1d }: { change1d: number }) {
         <Card className="mt-4 space-y-2">
           <Label className="text-sm font-medium" htmlFor="amount">Amount (USD)</Label>
           
-          <Input type="number" placeholder="0" />
+          <Input type="number" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </Card>
-        <Button className="mt-4 w-full">Sign up to trade</Button>
+        <Button className="mt-4 w-full" onClick={() => onPlace?.(Number(amount) || 0)}>Sign up to trade</Button>
       </div>
     </div>
   );
 }
+

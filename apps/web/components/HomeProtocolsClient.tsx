@@ -3,8 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import * as React from "react";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@repo/ui/components/ui/card";
+import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@repo/ui/components/ui/card";
 import { Button } from "@repo/ui/components/ui/button";
+import { Spinner } from "@repo/ui/components/ui/spinner";
+import { AnimatedCard } from "@repo/ui/components/animated-card";
 import { useDailyJSON } from "../lib/client/useDailyJSON";
 
 type Protocol = {
@@ -31,10 +33,11 @@ export default function HomeProtocolsClient() {
 
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <div key={i} className="animate-pulse rounded-lg border p-4 h-44 bg-muted/30" />
-        ))}
+      <div className="flex items-center justify-center py-12">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner className="h-8 w-8" />
+          <p className="text-sm text-muted-foreground">Loading protocols...</p>
+        </div>
       </div>
     );
   }
@@ -59,7 +62,7 @@ export default function HomeProtocolsClient() {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {list.slice(0, 12).map((p: Protocol) => (
-        <Card key={p.slug} className="hover:shadow-md transition-shadow">
+        <AnimatedCard key={p.slug}>
           <CardHeader className="pb-3">
             <div className="flex items-start gap-3">
               {p.logo ? (
@@ -80,7 +83,7 @@ export default function HomeProtocolsClient() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">1d change</span>
-              <span className={`text-sm font-medium ${p.change_1d && p.change_1d >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+              <span className={`text-sm font-medium ${p.change_1d && p.change_1d >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                 {typeof p.change_1d === "number" ? `${p.change_1d >= 0 ? "+" : ""}${p.change_1d.toFixed(2)}%` : "–"}
               </span>
             </div>
@@ -94,7 +97,7 @@ export default function HomeProtocolsClient() {
               <Button size="sm" className="h-8">View market</Button>
             </Link>
           </CardFooter>
-        </Card>
+        </AnimatedCard>
       ))}
     </div>
   );

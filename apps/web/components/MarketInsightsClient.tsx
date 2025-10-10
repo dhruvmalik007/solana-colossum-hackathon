@@ -63,19 +63,18 @@ export default function MarketInsightsClient(props: {
   seriesCount: number;
 }) {
   const { slug, name, category, latest, change1d, seriesCount } = props;
-  const { data, loading } = useLocalDaily<Insight>(
-    `insights:${slug}:v1`,
-    async () => {
-      const res = await fetch("/api/ai/insights", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ slug, name, category, latest, change1d, series: { length: seriesCount } }),
-      });
-      if (!res.ok) throw new Error(`insights ${res.status}`);
-      const body = await res.json();
-      return body.data as Insight;
-    }
-  );
+  const producer = React.useCallback(async () => {
+    const res = await fetch("/api/ai/insights", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug, name, category, latest, change1d, series: Array.from({ length: seriesCount }) }),
+    });
+    if (!res.ok) throw new Error(`insights ${res.status}`);
+    const body = await res.json();
+    return body.data as Insight;
+  }, [slug, name, category, latest, change1d, seriesCount]);
+
+  const { data, loading } = useLocalDaily<Insight>(`insights:${slug}:v1`, producer);
 
   if (loading) return <div className="text-sm text-muted-foreground">Generating insights…</div>;
   if (!data) return <div className="text-sm text-muted-foreground">No insights</div>;
