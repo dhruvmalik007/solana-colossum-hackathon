@@ -19,7 +19,7 @@ const steps = [
   { id: "review", label: "Review & Deploy" },
 ];
 
-export default function CreateMarketPage() {
+export default function CreateMarketPage() : any {
   const [current, setCurrent] = React.useState(0);
   const [status, setStatus] = React.useState<TxStatusState>({ stage: "idle" });
 

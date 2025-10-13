@@ -5,7 +5,8 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "skipLibCheck": true
   },
 
   "paths": {
@@ -19,6 +20,7 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "../../packages/**"
   ]
 }

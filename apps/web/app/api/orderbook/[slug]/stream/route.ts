@@ -12,7 +12,7 @@ function makeBook() {
   return { bids, asks, recentTrades };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { slug: string } }) {
+export async function GET(req: NextRequest, params ) {
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
