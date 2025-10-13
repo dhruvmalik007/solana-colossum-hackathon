@@ -50,6 +50,57 @@ jobs:
             echo "::error::Amplify app '$APP_NAME' not found"
             exit 1
           fi
+
+      - name: Fetch Amplify Logs
+        if: always()
+        run: |
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          echo "Fetching Amplify logs for app: ${{ steps.get_amplify_app.outputs.app_id }}, branch: $BRANCH"
+          sudo apt-get update && sudo apt-get install -y jq > /dev/null 2>&1 || true
+          # Get latest job for branch
+          JOB_ID=$(aws amplify list-jobs \
+            --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
+            --branch-name "$BRANCH" \
+            --max-items 1 \
+            --query 'jobSummaries[0].jobId' \
+            --output text \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+          echo "Latest Job ID: $JOB_ID"
+          [ -z "$JOB_ID" ] && echo "No job found; skipping log fetch" && exit 0
+          JOB_JSON=$(aws amplify get-job \
+            --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
+            --branch-name "$BRANCH" \
+            --job-id "$JOB_ID" \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+          mkdir -p amplify-logs
+          echo "$JOB_JSON" > amplify-logs/job.json
+          echo "## Amplify Job Summary" >> $GITHUB_STEP_SUMMARY
+          echo "$JOB_JSON" | jq '{summary: .job.summary}' >> $GITHUB_STEP_SUMMARY
+          COUNT=$(echo "$JOB_JSON" | jq '.job.steps | length')
+          for i in $(seq 0 $((COUNT-1))); do
+            NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].name")
+            STATUS=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].status")
+            LOG_URL=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].logUrl // .job.steps[$i].logsUrl // empty")
+            SAFE_NAME=$(echo "$NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+            echo "---- Step: $NAME (status: $STATUS) ----"
+            if [ -n "$LOG_URL" ]; then
+              echo "Log URL: $LOG_URL"
+              curl -sL "$LOG_URL" -o "amplify-logs/step-${i}-${SAFE_NAME}.log" || true
+              echo "Last 1000 lines for $NAME:"
+              (curl -sL "$LOG_URL" | tail -n 1000) || echo "(could not fetch logs)"
+            else
+              echo "(no log URL available for $NAME)"
+            fi
+          done
+
+      - name: Upload Amplify Logs Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amplify-logs-${{ github.ref_name }}-${{ github.run_id }}
+          path: amplify-logs
+          if-no-files-found: ignore
           
           echo "Found Amplify App ID: $APP_ID"
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT

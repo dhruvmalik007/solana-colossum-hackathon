@@ -186,6 +186,48 @@ jobs:
           echo "Build timed out after ${MAX_WAIT}s"
           exit 1
 
+      - name: Fetch Amplify Logs
+        if: always()
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          JOB_ID="${{ steps.trigger_build.outputs.job_id || steps.existing_job.outputs.job_id }}"
+          echo "Fetching Amplify logs for App: $APP_ID, Branch: $BRANCH_NAME, Job: $JOB_ID"
+          sudo apt-get update && sudo apt-get install -y jq > /dev/null 2>&1 || true
+          JOB_JSON=$(aws amplify get-job \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --job-id "$JOB_ID" \
+            --region ${{ secrets.AWS_REGION }})
+          mkdir -p amplify-logs
+          echo "$JOB_JSON" > amplify-logs/job.json
+          echo "## Amplify Job Summary" >> $GITHUB_STEP_SUMMARY
+          echo "$JOB_JSON" | jq '{summary: .job.summary}' >> $GITHUB_STEP_SUMMARY
+          COUNT=$(echo "$JOB_JSON" | jq '.job.steps | length')
+          for i in $(seq 0 $((COUNT-1))); do
+            NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].name")
+            STATUS=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].status")
+            LOG_URL=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].logUrl // .job.steps[$i].logsUrl // empty")
+            SAFE_NAME=$(echo "$NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+            echo "---- Step: $NAME (status: $STATUS) ----"
+            if [ -n "$LOG_URL" ]; then
+              echo "Log URL: $LOG_URL"
+              curl -sL "$LOG_URL" -o "amplify-logs/step-${i}-${SAFE_NAME}.log" || true
+              echo "Last 1000 lines for $NAME:"
+              (curl -sL "$LOG_URL" | tail -n 1000) || echo "(could not fetch logs)"
+            else
+              echo "(no log URL available for $NAME)"
+            fi
+          done
+
+      - name: Upload Amplify Logs Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amplify-logs-${{ github.ref_name }}-${{ github.run_id }}
+          path: amplify-logs
+          if-no-files-found: ignore
+
       - name: Get Deployment URL
         id: deployment_url
         if: success()
