@@ -10,6 +10,10 @@ on:
       - '.github/workflows/trigger-amplify-builds.yml'
   workflow_dispatch:  # Allow manual triggers
 
+concurrency:
+  group: amplify-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   trigger-amplify:
     name: Trigger Amplify Build
@@ -50,7 +54,22 @@ jobs:
           echo "Found Amplify App ID: $APP_ID"
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
 
+      - name: Check for existing running build
+        id: check_pending
+        run: |
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          COUNT=$(aws amplify list-jobs \
+            --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
+            --branch-name "$BRANCH" \
+            --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'] | length(@)" \
+            --output text \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+          echo "pending_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Pending/running jobs: $COUNT"
+
       - name: Trigger Amplify Build
+        if: steps.check_pending.outputs.pending_count == '0'
         run: |
           # Get the branch name (default to main if not set)
           BRANCH=${GITHUB_REF#refs/heads/}
@@ -66,6 +85,11 @@ jobs:
             --region ${{ vars.AWS_REGION || 'us-east-1' }}
           
           echo "Amplify build triggered successfully"
+
+      - name: Skip start (using existing running build)
+        if: steps.check_pending.outputs.pending_count != '0'
+        run: |
+          echo "An Amplify build is already pending/running for this branch. Skipping new start-job."
 
       - name: Get Build Status
         id: build_status

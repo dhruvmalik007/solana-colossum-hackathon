@@ -19,6 +19,10 @@ on:
           - staging
           - prod
 
+concurrency:
+  group: amplify-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Trigger Amplify Deployment
@@ -94,7 +98,22 @@ jobs:
           
           echo "Environment variable updated successfully"
 
+      - name: Check for existing running build
+        id: check_pending
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          COUNT=$(aws amplify list-jobs \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'] | length(@)" \
+            --output text \
+            --region ${{ secrets.AWS_REGION }})
+          echo "pending_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Pending/running jobs: $COUNT"
+
       - name: Trigger Amplify Build
+        if: steps.check_pending.outputs.pending_count == '0'
         id: trigger_build
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
@@ -114,11 +133,26 @@ jobs:
           echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
           echo "Build triggered with Job ID: $JOB_ID"
 
+      - name: Use existing job ID
+        if: steps.check_pending.outputs.pending_count != '0'
+        id: existing_job
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          JOB_ID=$(aws amplify list-jobs \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'] | [0].jobId" \
+            --output text \
+            --region ${{ secrets.AWS_REGION }})
+          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+          echo "Using existing Job ID: $JOB_ID"
+
       - name: Wait for Build Completion
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
-          JOB_ID="${{ steps.trigger_build.outputs.job_id }}"
+          JOB_ID="${{ steps.trigger_build.outputs.job_id || steps.existing_job.outputs.job_id }}"
           
           echo "Waiting for build to complete..."
           
