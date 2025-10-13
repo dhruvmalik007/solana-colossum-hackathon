@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@repo/ui/components/ui/button";
 import { Separator } from "@repo/ui/components/ui/separator";
 
-export default function SignupPage() {
+export default function SignupPage(): any {
   return (
     <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
       <Card className="w-full max-w-md">
