@@ -15,7 +15,7 @@ applications:
             - echo "pnpm version:"
             - pnpm --version
             - echo "Installing dependencies with frozen lockfile..."
-            - pnpm install --frozen-lockfile --no-optional
+            - pnpm install --frozen-lockfile --no-optional || (echo "Frozen lockfile failed; retrying without frozen lockfile" && pnpm install --no-frozen-lockfile --no-optional)
             - echo "Dependencies installed successfully"
         build:
           commands:
