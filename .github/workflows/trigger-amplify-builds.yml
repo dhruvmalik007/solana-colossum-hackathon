@@ -103,8 +103,7 @@ jobs:
           if-no-files-found: ignore
           
           echo "Found Amplify App ID: $APP_ID"
-          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
-
+         
       - name: Check for existing running build
         id: check_pending
         run: |
