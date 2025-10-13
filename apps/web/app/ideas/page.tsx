@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@repo/ui/components/ui/card";
 import { Button } from "@repo/ui/components/ui/button";
-
-export default function IdeasPage() {
+import { ReactNode} from "react";
+export default function IdeasPage() : any {
   const ideas = [
     {
       id: 1,

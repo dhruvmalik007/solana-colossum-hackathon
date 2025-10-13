@@ -8,7 +8,7 @@ import OrderBookClient from "../../../components/OrderBookClient";
 import { getProtocolDetailSlimCached } from "../../../lib/server/defillama";
 import MarketInsightsClient from "../../../components/MarketInsightsClient";
 
-export default async function MarketPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function MarketPage({ params }: { params: Promise<{ slug: string }> }): Promise<any> {
   const { slug } = await params;
   const p = await getProtocolDetailSlimCached(slug);
   if (!p) return notFound();
