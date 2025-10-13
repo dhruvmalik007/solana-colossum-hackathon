@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.44",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/util-dynamodb": "^3.700.0",
     "@privy-io/react-auth": "^3.3.0",
     "@repo/ui": "workspace:*",
     "@solana-program/memo": "^0.8.0",
@@ -36,7 +38,7 @@
     "@repo/eslint-config": "workspace:^",
     "@repo/typescript-config": "workspace:^",
     "@tailwindcss/postcss": "^4.1.14",
-    "@types/node": "latest",
+    "@types/node": "^24.7.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "autoprefixer": "^10.4.21",

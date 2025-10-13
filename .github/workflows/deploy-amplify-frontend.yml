@@ -1,0 +1,200 @@
+name: Deploy Amplify Frontend
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+  repository_dispatch:
+    types: [solana-program-deployed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+jobs:
+  deploy:
+    name: Trigger Amplify Deployment
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Determine Environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            ENV="${{ github.event.client_payload.environment }}"
+          else
+            # Determine from branch
+            BRANCH="${{ github.ref_name }}"
+            if [ "$BRANCH" == "main" ]; then
+              ENV="prod"
+            elif [ "$BRANCH" == "staging" ]; then
+              ENV="staging"
+            else
+              ENV="dev"
+            fi
+          fi
+          
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "Deploying to environment: $ENV"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get Amplify App ID
+        id: amplify_app
+        run: |
+          # Get Amplify App ID from CloudFormation stack outputs
+          STACK_NAME="solana-prediction-${{ steps.env.outputs.environment }}"
+          
+          APP_ID=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='AmplifyAppId'].OutputValue" \
+            --output text \
+            --region ${{ secrets.AWS_REGION }})
+          
+          if [ -z "$APP_ID" ]; then
+            echo "Error: Could not retrieve Amplify App ID from stack $STACK_NAME"
+            exit 1
+          fi
+          
+          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+          echo "Amplify App ID: $APP_ID"
+
+      - name: Update Environment Variables (if needed)
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          PROGRAM_ID="${{ github.event.client_payload.program_id }}"
+          
+          echo "Updating NEXT_PUBLIC_SOLANA_PROGRAM_ID to: $PROGRAM_ID"
+          
+          # Update app-level environment variable
+          aws amplify update-app \
+            --app-id "$APP_ID" \
+            --environment-variables "NEXT_PUBLIC_SOLANA_PROGRAM_ID=$PROGRAM_ID" \
+            --region ${{ secrets.AWS_REGION }} || true
+          
+          echo "Environment variable updated successfully"
+
+      - name: Trigger Amplify Build
+        id: trigger_build
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          
+          echo "Triggering build for App ID: $APP_ID, Branch: $BRANCH_NAME"
+          
+          # Start a new build
+          JOB_ID=$(aws amplify start-job \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --job-type RELEASE \
+            --query 'jobSummary.jobId' \
+            --output text \
+            --region ${{ secrets.AWS_REGION }})
+          
+          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+          echo "Build triggered with Job ID: $JOB_ID"
+
+      - name: Wait for Build Completion
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          JOB_ID="${{ steps.trigger_build.outputs.job_id }}"
+          
+          echo "Waiting for build to complete..."
+          
+          MAX_WAIT=1200  # 20 minutes
+          ELAPSED=0
+          INTERVAL=30
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            STATUS=$(aws amplify get-job \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --job-id "$JOB_ID" \
+              --query 'job.summary.status' \
+              --output text \
+              --region ${{ secrets.AWS_REGION }})
+            
+            echo "Build status: $STATUS (elapsed: ${ELAPSED}s)"
+            
+            if [ "$STATUS" == "SUCCEED" ]; then
+              echo "Build completed successfully!"
+              exit 0
+            elif [ "$STATUS" == "FAILED" ] || [ "$STATUS" == "CANCELLED" ]; then
+              echo "Build failed with status: $STATUS"
+              exit 1
+            fi
+            
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          echo "Build timed out after ${MAX_WAIT}s"
+          exit 1
+
+      - name: Get Deployment URL
+        id: deployment_url
+        if: success()
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          
+          # Get the app's default domain
+          DOMAIN=$(aws amplify get-app \
+            --app-id "$APP_ID" \
+            --query 'app.defaultDomain' \
+            --output text \
+            --region ${{ secrets.AWS_REGION }})
+          
+          URL="https://${BRANCH_NAME}.${DOMAIN}"
+          
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "Deployment URL: $URL"
+
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "### 🚀 Frontend Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**App ID:** ${{ steps.amplify_app.outputs.app_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Job ID:** ${{ steps.trigger_build.outputs.job_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🌐 **Live URL:** ${{ steps.deployment_url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Triggered by:** Solana program deployment" >> $GITHUB_STEP_SUMMARY
+            echo "**Program ID:** ${{ github.event.client_payload.program_id }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the build logs in AWS Amplify console for details." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**App ID:** ${{ steps.amplify_app.outputs.app_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY

@@ -1,8 +1,13 @@
 import 'server-only';
 
 import { withFileCache } from "../server/cache";
+import { withDynamoDBCache } from "../server/dynamodb-cache";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Use DynamoDB cache in production (AWS Lambda), file cache for local development
+const isProduction = process.env.AWS_REGION && process.env.DYNAMODB_CACHE_TABLE_NAME;
+const withCache = isProduction ? withDynamoDBCache : withFileCache;
 
 // Types aligned with pages' needs
 export type ProtocolSlim = {
@@ -16,8 +21,8 @@ export type ProtocolSlim = {
 };
 
 export async function getSolanaProtocolsCached(): Promise<ProtocolSlim[]> {
-  console.log("[getSolanaProtocolsCached] called");
-  return withFileCache<ProtocolSlim[]>(
+  console.log("[getSolanaProtocolsCached] called (using", isProduction ? "DynamoDB" : "file", "cache)");
+  return withCache<ProtocolSlim[]>(
     "protocols-solana.v2.min.json",
     DAY_MS,
     async () => {
@@ -71,7 +76,7 @@ export type ProtocolDetailSlim = {
 };
 
 export async function getProtocolDetailSlimCached(slug: string): Promise<ProtocolDetailSlim | null> {
-  return withFileCache<ProtocolDetailSlim | null>(
+  return withCache<ProtocolDetailSlim | null>(
     `protocol-${slug}.min.json`,
     DAY_MS,
     async () => {

@@ -1,0 +1,62 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - echo "Node version:"
+        - node --version
+        - echo "NPM version:"
+        - npm --version
+        - echo "Enabling Corepack for pnpm support..."
+        - corepack enable
+        - corepack prepare pnpm@9.0.0 --activate
+        - echo "pnpm version:"
+        - pnpm --version
+        - echo "Installing dependencies with frozen lockfile..."
+        - pnpm install --frozen-lockfile --no-optional
+        - echo "Dependencies installed successfully"
+    build:
+      commands:
+        - echo "Building Next.js web application..."
+        - echo "Environment - $ENVIRONMENT"
+        - echo "DynamoDB Table - $DYNAMODB_CACHE_TABLE_NAME"
+        # Fetch Solana Program ID from SSM and inject as env var
+        - |
+          if [ "$AWS_REGION" != "" ]; then
+            echo "Fetching Solana Program ID from SSM..."
+            PROGRAM_ID=$(aws ssm get-parameter --name "/solana-prediction/$ENVIRONMENT/program-id" --query "Parameter.Value" --output text --region $AWS_REGION 2>/dev/null || echo "")
+            if [ "$PROGRAM_ID" != "" ] && [ "$PROGRAM_ID" != "NOT_DEPLOYED_YET" ]; then
+              export NEXT_PUBLIC_SOLANA_PROGRAM_ID=$PROGRAM_ID
+              echo "Using Solana Program ID: $PROGRAM_ID"
+            else
+              echo "Warning: Solana program not yet deployed. Application will work without smart contract integration."
+            fi
+          fi
+        # Fetch OpenAI API Key from Secrets Manager
+        - |
+          if [ "$AWS_REGION" != "" ]; then
+            echo "Fetching OpenAI API key from Secrets Manager..."
+            OPENAI_KEY=$(aws secretsmanager get-secret-value --secret-id "solana-prediction/$ENVIRONMENT/openai-api-key" --query "SecretString" --output text --region $AWS_REGION 2>/dev/null | jq -r '.OPENAI_API_KEY' || echo "")
+            if [ "$OPENAI_KEY" != "" ]; then
+              export OPENAI_API_KEY=$OPENAI_KEY
+              echo "OpenAI API key loaded successfully"
+            else
+              echo "Warning: OpenAI API key not found. AI insights feature will be disabled."
+            fi
+          fi
+        - echo "Building web app with Turbo..."
+        - pnpm run build --filter=web
+        - echo "Build completed successfully"
+  artifacts:
+    baseDirectory: apps/web/.next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+      - .pnpm-store/**/*
+      - apps/web/node_modules/**/*
+      - packages/*/node_modules/**/*
+
+# Environment-specific overrides (optional)
+# You can add backend configuration here if using Amplify Gen 2 backend

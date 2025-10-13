@@ -1,0 +1,349 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Infrastructure for Solana Distribution Prediction Markets - Amplify, DynamoDB, Secrets Manager, and IAM'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Environment name (dev, staging, or prod)
+  
+  GitHubRepository:
+    Type: String
+    Description: GitHub repository URL (e.g., https://github.com/username/repo)
+  
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Git branch to deploy
+  
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Description: GitHub personal access token for Amplify to access the repository
+
+  PrivyAppId:
+    Type: String
+    Description: Privy App ID for authentication
+  
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenAI API key for AI insights feature
+
+  SolanaMainnetRPC:
+    Type: String
+    Default: https://api.mainnet-beta.solana.com
+    Description: Solana mainnet RPC endpoint
+  
+  SolanaDevnetRPC:
+    Type: String
+    Default: https://api.devnet.solana.com
+    Description: Solana devnet RPC endpoint
+
+Resources:
+  # ============================================
+  # DynamoDB Table for API Response Caching
+  # ============================================
+  APICacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'solana-prediction-cache-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: cacheKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: cacheKey
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: SolanaPredictionMarkets
+
+  # ============================================
+  # Secrets Manager for Sensitive Configuration
+  # ============================================
+  OpenAISecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub 'solana-prediction/${Environment}/openai-api-key'
+      Description: OpenAI API key for AI insights
+      SecretString: !Sub |
+        {
+          "OPENAI_API_KEY": "${OpenAIApiKey}"
+        }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  SolanaDeploymentKeypair:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub 'solana-prediction/${Environment}/deployment-keypair'
+      Description: Solana deployment wallet keypair (to be updated manually)
+      SecretString: |
+        {
+          "keypair": "[]",
+          "note": "Update this with your Solana deployment keypair JSON array"
+        }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================
+  # SSM Parameters for Program IDs and Config
+  # ============================================
+  SolanaProgramIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/solana-prediction/${Environment}/program-id'
+      Type: String
+      Value: 'NOT_DEPLOYED_YET'
+      Description: Deployed Solana program ID (updated by CI/CD)
+      Tags:
+        Environment: !Ref Environment
+
+  # ============================================
+  # IAM Role for Amplify App
+  # ============================================
+  AmplifyServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'AmplifyRole-SolanaPrediction-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - amplify.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess-Amplify
+      Policies:
+        - PolicyName: AmplifyDynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !GetAtt APICacheTable.Arn
+        - PolicyName: AmplifySecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref OpenAISecret
+                  - !Ref SolanaDeploymentKeypair
+        - PolicyName: AmplifySSMAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/solana-prediction/${Environment}/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================
+  # Amplify App for Next.js Frontend
+  # ============================================
+  AmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub 'solana-prediction-markets-${Environment}'
+      Description: Solana Distributional Prediction Markets Platform
+      Repository: !Ref GitHubRepository
+      AccessToken: !Ref GitHubToken
+      BuildSpec: |
+        version: 1
+        frontend:
+          phases:
+            preBuild:
+              commands:
+                - echo "Installing dependencies with pnpm..."
+                - corepack enable
+                - corepack prepare pnpm@9.0.0 --activate
+                - pnpm install --frozen-lockfile
+            build:
+              commands:
+                - echo "Building web application..."
+                - pnpm run build --filter=web
+          artifacts:
+            baseDirectory: apps/web/.next
+            files:
+              - '**/*'
+          cache:
+            paths:
+              - node_modules/**/*
+              - .pnpm-store/**/*
+      IAMServiceRole: !GetAtt AmplifyServiceRole.Arn
+      EnvironmentVariables:
+        - Name: _LIVE_PACKAGE_UPDATES
+          Value: '[{"pkg":"@aws-amplify/cli","type":"npm","version":"latest"}]'
+        - Name: AMPLIFY_MONOREPO_APP_ROOT
+          Value: apps/web
+        - Name: AMPLIFY_DIFF_DEPLOY
+          Value: 'false'
+        - Name: NEXT_PUBLIC_PRIVY_APP_ID
+          Value: !Ref PrivyAppId
+        - Name: NEXT_PUBLIC_SOLANA_MAINNET_RPC
+          Value: !Ref SolanaMainnetRPC
+        - Name: NEXT_PUBLIC_SOLANA_DEVNET_RPC
+          Value: !Ref SolanaDevnetRPC
+        - Name: DYNAMODB_CACHE_TABLE_NAME
+          Value: !Ref APICacheTable
+      CustomRules:
+        - Source: /<*>
+          Target: /index.html
+          Status: '404-200'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  AmplifyBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      BranchName: !Ref GitHubBranch
+      EnableAutoBuild: true
+      EnablePullRequestPreview: false
+      Stage: !If [IsProduction, PRODUCTION, DEVELOPMENT]
+      EnvironmentVariables:
+        - Name: ENVIRONMENT
+          Value: !Ref Environment
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================
+  # Lambda Execution Role (for future serverless functions)
+  # ============================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LambdaExecution-SolanaPrediction-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !GetAtt APICacheTable.Arn
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref OpenAISecret
+        - PolicyName: SSMAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/solana-prediction/${Environment}/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Outputs:
+  AmplifyAppId:
+    Description: Amplify App ID
+    Value: !GetAtt AmplifyApp.AppId
+    Export:
+      Name: !Sub '${AWS::StackName}-AmplifyAppId'
+
+  AmplifyAppURL:
+    Description: Amplify App Default Domain
+    Value: !Sub 'https://${GitHubBranch}.${AmplifyApp.DefaultDomain}'
+    Export:
+      Name: !Sub '${AWS::StackName}-AmplifyURL'
+
+  DynamoDBTableName:
+    Description: DynamoDB Cache Table Name
+    Value: !Ref APICacheTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CacheTableName'
+
+  DynamoDBTableArn:
+    Description: DynamoDB Cache Table ARN
+    Value: !GetAtt APICacheTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CacheTableArn'
+
+  OpenAISecretArn:
+    Description: OpenAI Secret ARN
+    Value: !Ref OpenAISecret
+    Export:
+      Name: !Sub '${AWS::StackName}-OpenAISecretArn'
+
+  SolanaKeypairSecretArn:
+    Description: Solana Deployment Keypair Secret ARN
+    Value: !Ref SolanaDeploymentKeypair
+    Export:
+      Name: !Sub '${AWS::StackName}-SolanaKeypairArn'
+
+  ProgramIdParameterName:
+    Description: SSM Parameter name for Solana Program ID
+    Value: !Ref SolanaProgramIdParameter
+    Export:
+      Name: !Sub '${AWS::StackName}-ProgramIdParam'
+
+  LambdaExecutionRoleArn:
+    Description: Lambda Execution Role ARN
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaRoleArn'

@@ -1,0 +1,150 @@
+name: Trigger Amplify Builds
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'apps/web/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/trigger-amplify-builds.yml'
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  trigger-amplify:
+    name: Trigger Amplify Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Get Amplify App ID
+        id: get_amplify_app
+        run: |
+          # Get the Amplify App ID using the app name pattern
+          APP_NAME="solana-prediction-markets-${{ vars.ENVIRONMENT || 'dev' }}"
+          echo "Looking for Amplify app: $APP_NAME"
+          
+          # List all Amplify apps and find the one matching our pattern
+          APP_ID=$(aws amplify list-apps \
+            --query "apps[?name=='$APP_NAME'].appId" \
+            --output text \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+          
+          if [ -z "$APP_ID" ]; then
+            echo "::error::Amplify app '$APP_NAME' not found"
+            exit 1
+          fi
+          
+          echo "Found Amplify App ID: $APP_ID"
+          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+
+      - name: Trigger Amplify Build
+        run: |
+          # Get the branch name (default to main if not set)
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          
+          echo "Starting Amplify build for app: ${{ steps.get_amplify_app.outputs.app_id }}, branch: $BRANCH"
+          
+          # Start the build
+          aws amplify start-job \
+            --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
+            --branch-name "$BRANCH" \
+            --job-type RELEASE \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }}
+          
+          echo "Amplify build triggered successfully"
+
+      - name: Get Build Status
+        id: build_status
+        if: always()
+        run: |
+          # Get the latest build for the branch
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          
+          echo "Checking build status for branch: $BRANCH"
+          
+          # Get the latest build ID
+          BUILD_ID=$(aws amplify list-jobs \
+            --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
+            --branch-name "$BRANCH" \
+            --max-items 1 \
+            --query 'jobSummaries[0].jobId' \
+            --output text \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+          
+          if [ -z "$BUILD_ID" ] || [ "$BUILD_ID" = "None" ]; then
+            echo "::warning::No build found for branch $BRANCH"
+            exit 0
+          fi
+          
+          # Get build details
+          BUILD_STATUS=$(aws amplify get-job \
+            --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
+            --branch-name "$BRANCH" \
+            --job-id "$BUILD_ID" \
+            --query 'job.summary.status' \
+            --output text \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+          
+          echo "Build $BUILD_ID status: $BUILD_STATUS"
+          echo "build_status=$BUILD_STATUS" >> $GITHUB_OUTPUT
+          
+          # Set job status based on build status
+          if [ "$BUILD_STATUS" != "SUCCEED" ]; then
+            echo "::warning::Build $BUILD_ID is in state: $BUILD_STATUS"
+            # Uncomment to fail the workflow if build is not successful
+            # if [ "$BUILD_STATUS" = "FAILED" ] || [ "$BUILD_STATUS" = "CANCELLED" ]; then
+            #   exit 1
+            # fi
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const comment = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `🚀 Amplify build triggered!\n` +
+                    `**Status:** ${{ steps.build_status.outputs.build_status || 'UNKNOWN' }}\n` +
+                    `**Environment:** ${{ vars.ENVIRONMENT || 'dev' }}\n` +
+                    `**Branch:** ${process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'main'}`,
+            };
+            
+            // Check if we already have a comment from this action
+            const existingComment = comments.find(c => 
+              c.user.login === 'github-actions[bot]' && 
+              c.body.includes('Amplify build triggered')
+            );
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                ...comment,
+                comment_id: existingComment.id
+              });
+            } else {
+              await github.rest.issues.createComment(comment);
+            }
