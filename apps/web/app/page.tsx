@@ -1,7 +1,7 @@
 import HomeProtocolsClient from "../components/HomeProtocolsClient";
 import { FadeIn } from "@repo/ui/components/fade-in";
 
-export default async function Home() {
+export default async function Home(): Promise<any> {
   return (
     <div className="space-y-6">
       <FadeIn>

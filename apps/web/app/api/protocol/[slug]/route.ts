@@ -3,7 +3,7 @@ import { getProtocolDetailSlimCached } from "../../../../lib/server/defillama";
 
 export const dynamic = "force-dynamic"; // always hit file cache, not Next data cache
 
-export async function GET(_req: Request, ctx: { params: { slug: string } }) {
+export async function GET(_req: Request, ctx: { params: any}) {
   try {
     const { slug } = ctx.params;
     const data = await getProtocolDetailSlimCached(slug);

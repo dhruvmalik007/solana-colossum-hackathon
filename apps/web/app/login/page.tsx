@@ -9,7 +9,7 @@ import { Label } from "@repo/ui/components/ui/label";
 import * as React from "react";
 import { usePrivy } from "@privy-io/react-auth";
 
-export default function LoginPage() {
+export default function LoginPage(): any {
   const { login } = usePrivy();
   const [email, setEmail] = React.useState("");
   const [busy, setBusy] = React.useState<string | null>(null);

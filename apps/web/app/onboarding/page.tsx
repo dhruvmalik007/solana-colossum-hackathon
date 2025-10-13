@@ -18,7 +18,7 @@ const steps = [
   { id: "confirm", label: "Confirm & Trade" },
 ];
 
-export default function InvestorOnboardingPage() {
+export default function InvestorOnboardingPage(): any {
   const [current, setCurrent] = React.useState(0);
   const [memo, setMemo] = React.useState("hello-predict");
   const { state, sendMemo } = useSendMemoTx();
