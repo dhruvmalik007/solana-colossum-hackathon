@@ -73,8 +73,33 @@ jobs:
             --output text \
             --region ${{ secrets.AWS_REGION }})
           
+          # Fallback 1: explicit secret/var
+          if [ -z "$APP_ID" ] && [ -n "${{ secrets.AMPLIFY_APP_ID }}" ]; then
+            echo "Using AMPLIFY_APP_ID from secrets"
+            APP_ID="${{ secrets.AMPLIFY_APP_ID }}"
+          fi
+
+          # Fallback 2: discover by app name patterns
           if [ -z "$APP_ID" ]; then
-            echo "Error: Could not retrieve Amplify App ID from stack $STACK_NAME"
+            ENV="${{ steps.env.outputs.environment }}"
+            NAME_A="solana-prediction-$ENV"
+            NAME_B="solana-prediction-markets-$ENV"
+            echo "Attempting discovery by name: $NAME_A, then $NAME_B"
+            APP_ID=$(aws amplify list-apps \
+              --query "apps[?name=='$NAME_A'].appId | [0]" \
+              --output text \
+              --region ${{ secrets.AWS_REGION }} | tr -d '\n')
+            if [ -z "$APP_ID" ] || [ "$APP_ID" = "None" ]; then
+              APP_ID=$(aws amplify list-apps \
+                --query "apps[?name=='$NAME_B'].appId | [0]" \
+                --output text \
+                --region ${{ secrets.AWS_REGION }} | tr -d '\n')
+            fi
+          fi
+
+          if [ -z "$APP_ID" ] || [ "$APP_ID" = "None" ]; then
+            echo "::error::Could not resolve Amplify App ID via CloudFormation, secret, or name discovery."
+            echo "Checked stack: $STACK_NAME and names: $NAME_A, $NAME_B"
             exit 1
           fi
           

@@ -51,6 +51,9 @@ jobs:
             exit 1
           fi
 
+          echo "Found Amplify App ID: $APP_ID"
+          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+
       - name: Fetch Amplify Logs
         if: always()
         run: |
@@ -102,11 +105,13 @@ jobs:
           path: amplify-logs
           if-no-files-found: ignore
           
-          echo "Found Amplify App ID: $APP_ID"
-         
       - name: Check for existing running build
         id: check_pending
         run: |
+          if [ -z "${{ steps.get_amplify_app.outputs.app_id }}" ] || [ "${{ steps.get_amplify_app.outputs.app_id }}" = "None" ]; then
+            echo "::error::No Amplify App ID available (get_amplify_app.outputs.app_id)."
+            exit 1
+          fi
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
           COUNT=$(aws amplify list-jobs \
