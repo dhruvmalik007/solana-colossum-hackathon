@@ -123,6 +123,25 @@ jobs:
           
           echo "Environment variable updated successfully"
 
+      - name: Ensure Amplify branch exists
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          echo "Ensuring Amplify branch exists: $BRANCH_NAME (App: $APP_ID)"
+          if ! aws amplify get-branch \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Branch '$BRANCH_NAME' not found in Amplify. Creating..."
+            aws amplify create-branch \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --region ${{ secrets.AWS_REGION }}
+            echo "Branch '$BRANCH_NAME' created."
+          else
+            echo "Branch '$BRANCH_NAME' already exists in Amplify."
+          fi
+
       - name: Check for existing running build
         id: check_pending
         run: |
