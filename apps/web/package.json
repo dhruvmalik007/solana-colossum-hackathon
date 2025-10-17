@@ -15,6 +15,7 @@
     "@aws-sdk/client-dynamodb": "^3.700.0",
     "@aws-sdk/util-dynamodb": "^3.908.0",
     "@privy-io/react-auth": "^3.3.0",
+    "@repo/database": "workspace:*",
     "@repo/ui": "workspace:*",
     "@solana-program/memo": "^0.8.0",
     "@solana/kit": "^4.0.0",
@@ -32,7 +33,8 @@
     "recharts": "^2.15.4",
     "solana": "link:@privy-io/react-auth/solana",
     "tailwindcss": "^4.1.14",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:^",

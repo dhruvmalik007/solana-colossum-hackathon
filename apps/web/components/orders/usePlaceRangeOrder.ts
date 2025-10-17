@@ -20,16 +20,17 @@ export function usePlaceRangeOrder(slug: string) {
     }
     try {
       setState({ stage: "signing" });
-
-      // TODO: build real instruction once Anchor program ready.
-      // For now, simulate or send a memo-like tx to verify wallet flow
-      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      await sleep(300);
+      const price = (Number(omin) + Number(omax)) / 2;
+      const size = Number(volume);
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slug, marketId: slug, side: "Buy", price, size }),
+      });
+      if (!res.ok) throw new Error(`order ${res.status}`);
       setState({ stage: "submitting", signature: undefined });
-      await sleep(400);
-      setState({ stage: "confirming", signature: "pending", confirmations: 1, target: 32 });
-      await sleep(600);
-      setState({ stage: "finalized", signature: "demo" });
+      setState({ stage: "confirming", signature: "db", confirmations: 1, target: 1 });
+      setState({ stage: "finalized", signature: "db" });
     } catch (e: any) {
       setState({ stage: "error", message: e?.message ?? "Failed to place order" });
     }

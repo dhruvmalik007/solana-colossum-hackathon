@@ -1,0 +1,192 @@
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { env } from "./keys";
+
+const baseClient = new DynamoDBClient({
+  region: env.AWS_REGION,
+  endpoint: env.AWS_DYNAMODB_ENDPOINT,
+});
+
+export const ddb = DynamoDBDocumentClient.from(baseClient);
+
+export type MarketStatus = "Draft" | "Active" | "Resolving" | "Resolved";
+
+export type Market = {
+  id: string; // partition key
+  slug: string; // human readable id
+  title: string;
+  description?: string;
+  category?: string;
+  createdAt: string; // ISO
+  resolutionTime?: string; // ISO
+  status: MarketStatus;
+};
+
+export type Position = {
+  id: string; // partition key
+  marketId: string; // GSI for market
+  owner: string; // pubkey; GSI for owner
+  size: number;
+  collateralLocked: number;
+  createdAt: string;
+};
+
+export type Trade = {
+  id: string; // partition key
+  marketId: string;
+  positionId: string;
+  side: "Buy" | "Sell";
+  size: number;
+  avgPrice: number;
+  feesPaid: number;
+  createdAt: string;
+};
+
+// Markets
+export async function putMarket(market: Market) {
+  await ddb.send(
+    new PutCommand({ TableName: env.DYNAMODB_TABLE_MARKETS, Item: market })
+  );
+}
+
+export async function getMarket(id: string) {
+  const out = await ddb.send(
+    new GetCommand({ TableName: env.DYNAMODB_TABLE_MARKETS, Key: { id } })
+  );
+  return (out.Item as Market) ?? null;
+}
+
+export async function getMarketBySlug(slug: string) {
+  // For MVP, id == slug
+  return getMarket(slug);
+}
+
+// Positions
+export async function putPosition(position: Position) {
+  await ddb.send(
+    new PutCommand({ TableName: env.DYNAMODB_TABLE_POSITIONS, Item: position })
+  );
+}
+
+// Trades
+export async function putTrade(trade: Trade) {
+  await ddb.send(
+    new PutCommand({ TableName: env.DYNAMODB_TABLE_TRADES, Item: trade })
+  );
+}
+
+// List helpers (MVP scans; optimize with GSIs later)
+export async function listMarkets() {
+  const out = await ddb.send(
+    new ScanCommand({ TableName: env.DYNAMODB_TABLE_MARKETS })
+  );
+  return (out.Items as Market[]) ?? [];
+}
+
+// Orders (separate table suggested; reusing TRADES or new table requires env)
+export type Order = {
+  id: string;
+  marketId: string;
+  side: "Buy" | "Sell";
+  price: number;
+  size: number;
+  remaining: number;
+  status: "Open" | "Filled" | "Cancelled";
+  createdAt: string;
+};
+
+export async function putOrder(order: Order) {
+  const table = env.DYNAMODB_TABLE_ORDERS;
+  await ddb.send(
+    new PutCommand({ TableName: table, Item: order })
+  );
+}
+
+export async function listOrdersByMarket(marketId: string) {
+  const table = env.DYNAMODB_TABLE_ORDERS;
+  // TODO: Once GSIs are created, use QueryCommand on GSI1 (marketSide) for top-of-book
+  // For now, use scan as MVP
+  const out = await ddb.send(
+    new ScanCommand({ TableName: table, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
+  );
+  return (out.Items as Order[]) ?? [];
+}
+
+// GSI-optimized queries (to be used after GSIs are created per DYNAMODB_GSIS.md)
+export async function getTopBids(marketId: string, limit = 10) {
+  // Query GSI: orders_by_market_buy (PK=marketId#Buy, SK=sort DESC)
+  // Returns highest bids first
+  const table = env.DYNAMODB_TABLE_ORDERS;
+  const out = await ddb.send(
+    new QueryCommand({
+      TableName: table,
+      IndexName: "orders_by_market_buy",
+      KeyConditionExpression: "marketSide = :ms",
+      ExpressionAttributeValues: { ":ms": `${marketId}#Buy` },
+      ScanIndexForward: false, // DESC
+      Limit: limit,
+    })
+  );
+  return (out.Items as Order[]) ?? [];
+}
+
+export async function getTopAsks(marketId: string, limit = 10) {
+  // Query GSI: orders_by_market_sell (PK=marketId#Sell, SK=sort ASC)
+  // Returns lowest asks first
+  const table = env.DYNAMODB_TABLE_ORDERS;
+  const out = await ddb.send(
+    new QueryCommand({
+      TableName: table,
+      IndexName: "orders_by_market_sell",
+      KeyConditionExpression: "marketSide = :ms",
+      ExpressionAttributeValues: { ":ms": `${marketId}#Sell` },
+      ScanIndexForward: true, // ASC
+      Limit: limit,
+    })
+  );
+  return (out.Items as Order[]) ?? [];
+}
+
+export async function listTradesByMarket(marketId: string) {
+  const out = await ddb.send(
+    new ScanCommand({ TableName: env.DYNAMODB_TABLE_TRADES, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
+  );
+  return (out.Items as Trade[]) ?? [];
+}
+
+export type CreatorProfile = {
+  userId: string;
+  walletAddress: string;
+  role: "creator" | "participant" | "both";
+  portfolioConnected: boolean;
+  portfolioStats?: {
+    totalMarketsCreated: number;
+    totalVolume: number;
+    successRate: number;
+    averageAccuracy: number;
+  };
+  profileData?: {
+    displayName: string;
+    bio: string;
+    avatar?: string;
+    website?: string;
+  };
+  verificationStatus: "pending" | "verified" | "rejected";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function putCreatorProfile(profile: CreatorProfile) {
+  await ddb.send(
+    new PutCommand({ TableName: env.DYNAMODB_TABLE_CREATOR_PROFILES, Item: profile })
+  );
+}
+
+export async function getCreatorProfile(userId: string) {
+  const out = await ddb.send(
+    new GetCommand({ TableName: env.DYNAMODB_TABLE_CREATOR_PROFILES, Key: { userId } })
+  );
+  return (out.Item as CreatorProfile) ?? null;
+}
+
+export * from "./schemas";

@@ -1,6 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
+import { usePrivy } from "@privy-io/react-auth";
+import { ProtectedRoute } from "../../components/auth/ProtectedRoute";
 import { Stepper } from "@repo/ui/components/Stepper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@repo/ui/components/ui/card";
 import { Input } from "@repo/ui/components/ui/input";
@@ -9,6 +12,7 @@ import { Label } from "@repo/ui/components/ui/label";
 import { Select, SelectTrigger, SelectContent, SelectValue } from "@repo/ui/components/ui/select";
 import { Button } from "@repo/ui/components/ui/button";
 import { TxnStatus, type TxStatusState } from "@repo/ui/components/TxnStatus";
+import { MarketCreationSchema, type MarketCreationInput } from "../../lib/validation/market-schema";
 
 const steps = [
   { id: "type", label: "Market Type" },
@@ -19,9 +23,10 @@ const steps = [
   { id: "review", label: "Review & Deploy" },
 ];
 
-export default function CreateMarketPage() : any {
+function CreateMarketContent() : any {
   const [current, setCurrent] = React.useState(0);
   const [status, setStatus] = React.useState<TxStatusState>({ stage: "idle" });
+  const router = useRouter();
 
   // Minimal form state (MVP) — extend per spec
   const [marketType, setMarketType] = React.useState<string>("");
@@ -31,6 +36,7 @@ export default function CreateMarketPage() : any {
   const [rangeMax, setRangeMax] = React.useState<string>("");
   const [oracleType, setOracleType] = React.useState<string>("");
   const [liquidity, setLiquidity] = React.useState<string>("");
+  const [validationErrors, setValidationErrors] = React.useState<Record<string, string>>({});
 
   const canNext = React.useMemo(() => {
     switch (current) {
@@ -51,14 +57,53 @@ export default function CreateMarketPage() : any {
 
   async function onDeploy() {
     try {
+      setValidationErrors({});
       setStatus({ stage: "signing" });
-      // TODO: integrate @solana/kit transaction to create_distributional_market
-      await new Promise((r) => setTimeout(r, 800));
+      
+      // Validate with Zod schema
+      const input = {
+        title,
+        description,
+        category: (marketType as any) || undefined,
+        outcomeMin: Number(rangeMin),
+        outcomeMax: Number(rangeMax),
+        resolutionTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        oracleType: (oracleType as any) || "Manual",
+        feeBps: 50,
+      };
+      
+      const validation = MarketCreationSchema.safeParse(input);
+      if (!validation.success) {
+        const errors: Record<string, string> = {};
+        validation.error.issues.forEach((issue: any) => {
+          const path = issue.path.join(".");
+          errors[path] = issue.message;
+        });
+        setValidationErrors(errors);
+        setStatus({ stage: "error", message: "Validation failed. Check form fields." });
+        return;
+      }
+      
+      // MVP: write to DB so market appears on homepage and market page resolves
+      const body = {
+        title,
+        description,
+        category: marketType || undefined,
+        resolutionTime: undefined as string | undefined,
+      };
+      const res = await fetch("/api/markets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`create market ${res.status}`);
+      const out = await res.json();
+      const slug = out?.data?.slug as string;
+
       setStatus({ stage: "submitting", signature: undefined });
-      await new Promise((r) => setTimeout(r, 800));
-      setStatus({ stage: "confirming", signature: "pending", confirmations: 2, target: 32 });
-      await new Promise((r) => setTimeout(r, 800));
-      setStatus({ stage: "finalized", signature: "demo-signature" });
+      setStatus({ stage: "confirming", signature: "db", confirmations: 1, target: 1 });
+      setStatus({ stage: "finalized", signature: "db" });
+      if (slug) router.push(`/markets/${slug}`);
     } catch (e: any) {
       setStatus({ stage: "error", message: e?.message ?? "Deployment failed" });
     }
@@ -190,5 +235,13 @@ export default function CreateMarketPage() : any {
         )}
       </div>
     </div>
+  );
+}
+
+export default function CreateMarketPage() {
+  return (
+    <ProtectedRoute>
+      <CreateMarketContent />
+    </ProtectedRoute>
   );
 }

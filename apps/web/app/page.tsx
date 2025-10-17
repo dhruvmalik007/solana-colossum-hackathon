@@ -1,4 +1,4 @@
-import HomeProtocolsClient from "../components/HomeProtocolsClient";
+import HomeMarketsClient from "../components/HomeMarketsClient";
 import { FadeIn } from "@repo/ui/components/fade-in";
 
 export default async function Home(): Promise<any> {
@@ -14,7 +14,7 @@ export default async function Home(): Promise<any> {
       </FadeIn>
       
       <FadeIn delay={0.1}>
-        <HomeProtocolsClient />
+        <HomeMarketsClient />
       </FadeIn>
     </div>
   );

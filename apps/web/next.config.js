@@ -8,7 +8,7 @@ const nextConfig = {
     ],
   },
   // Ensure shared workspace packages are transpiled by Next
-  transpilePackages: ["@repo/ui"],
+  transpilePackages: ["@repo/ui", "@repo/database"],
   // Ignore type errors during production builds to prevent external package type mismatches from failing CI
   typescript: {
     ignoreBuildErrors: true,
