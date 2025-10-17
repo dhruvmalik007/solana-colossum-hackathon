@@ -260,14 +260,26 @@ jobs:
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
           
-          # Get the app's default domain
-          DOMAIN=$(aws amplify get-app \
+          # Get app default domain
+          APP_INFO=$(aws amplify get-app \
             --app-id "$APP_ID" \
             --query 'app.defaultDomain' \
             --output text \
             --region ${{ secrets.AWS_REGION }})
           
+          # Construct the branch-specific deployment URL
+          # Format: https://<branch-name>.<app-id>.amplifyapp.com
+          DOMAIN="$APP_INFO"
+          if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "None" ]; then
+            DOMAIN="${APP_ID}.amplifyapp.com"
+          fi
+          
           URL="https://${BRANCH_NAME}.${DOMAIN}"
+          
+          if [[ ! "$URL" =~ ^https:// ]]; then
+            echo "::error::Failed to construct valid deployment URL: $URL"
+            exit 1
+          fi
           
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Deployment URL: $URL"

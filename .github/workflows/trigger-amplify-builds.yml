@@ -191,6 +191,29 @@ jobs:
             # fi
           fi
 
+      - name: Get Deployment URL
+        id: deployment_url
+        if: success()
+        run: |
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          APP_ID="${{ steps.get_amplify_app.outputs.app_id }}"
+          
+          APP_INFO=$(aws amplify get-app \
+            --app-id "$APP_ID" \
+            --query 'app.defaultDomain' \
+            --output text \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+          
+          DOMAIN="$APP_INFO"
+          if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "None" ]; then
+            DOMAIN="${APP_ID}.amplifyapp.com"
+          fi
+          
+          URL="https://${BRANCH}.${DOMAIN}"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "Deployment URL: $URL"
+
       - name: Comment on PR
         if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@v6
@@ -210,7 +233,8 @@ jobs:
               body: `🚀 Amplify build triggered!\n` +
                     `**Status:** ${{ steps.build_status.outputs.build_status || 'UNKNOWN' }}\n` +
                     `**Environment:** ${{ vars.ENVIRONMENT || 'dev' }}\n` +
-                    `**Branch:** ${process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'main'}`,
+                    `**Branch:** ${process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'main'}\n` +
+                    `**Deployment URL:** ${{ steps.deployment_url.outputs.url || 'Pending...' }}`,
             };
             
             // Check if we already have a comment from this action
