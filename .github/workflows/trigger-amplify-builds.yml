@@ -53,6 +53,31 @@ jobs:
 
           echo "Found Amplify App ID: $APP_ID"
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+          echo "Found Amplify App ID: $APP_ID"
+
+      - name: Debug Amplify App & Branches
+        run: |
+          APP_ID="${{ steps.get_amplify_app.outputs.app_id }}"
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          SANITIZED=$(echo "$BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')
+          echo "SANITIZED_BRANCH=$SANITIZED" >> $GITHUB_ENV
+          echo "[Debug] Region: ${{ vars.AWS_REGION || 'us-east-1' }}"
+          echo "[Debug] App ID: $APP_ID"
+          echo "[Debug] Branch: $BRANCH (sanitized: $SANITIZED)"
+          echo "[Debug] App Info:"
+          aws amplify get-app \
+            --app-id "$APP_ID" \
+            --query 'app.{name:name,repository:repository,defaultDomain:defaultDomain,platform:platform}' \
+            --output table \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+          echo "[Debug] Existing branches:"
+          aws amplify list-branches \
+            --app-id "$APP_ID" \
+            --query 'branches[].branchName' \
+            --output text \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+        if: always()
 
       - name: Fetch Amplify Logs
         if: always()
@@ -110,20 +135,30 @@ jobs:
           APP_ID="${{ steps.get_amplify_app.outputs.app_id }}"
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
+          SANITIZED=$(echo "$BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')
           echo "Ensuring Amplify branch exists: $BRANCH (App: $APP_ID)"
-          if ! aws amplify get-branch \
+          ATTEMPTS=0
+          MAX_ATTEMPTS=6
+          until aws amplify get-branch \
             --app-id "$APP_ID" \
-            --branch-name "$BRANCH" \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }} >/dev/null 2>&1; then
-            echo "Branch '$BRANCH' not found in Amplify. Creating..."
+            --branch-name "$SANITIZED" \
+            --region ${{ vars.AWS_REGION || 'us-east-1' }} >/dev/null 2>&1; do
+            if [ $ATTEMPTS -ge $MAX_ATTEMPTS ]; then
+              echo "::error::Branch '$BRANCH' not found after $MAX_ATTEMPTS attempts."
+              echo "Existing branches:" 
+              aws amplify list-branches --app-id "$APP_ID" --query 'branches[].branchName' --output text --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+              exit 1
+            fi
+            echo "Branch '$BRANCH' not found. Creating (attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS)..."
             aws amplify create-branch \
               --app-id "$APP_ID" \
-              --branch-name "$BRANCH" \
-              --region ${{ vars.AWS_REGION || 'us-east-1' }}
-            echo "Branch '$BRANCH' created."
-          else
-            echo "Branch '$BRANCH' already exists in Amplify."
-          fi
+              --branch-name "$SANITIZED" \
+              --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+            echo "Waiting 15s before re-check..."
+            sleep 15
+            ATTEMPTS=$((ATTEMPTS+1))
+          done
+          echo "Branch '$SANITIZED' is present in Amplify."
           
       - name: Check for existing running build
         id: check_pending
@@ -134,12 +169,18 @@ jobs:
           fi
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
-          COUNT=$(aws amplify list-jobs \
+          BRANCH=${SANITIZED_BRANCH:-$BRANCH}
+          echo "Using branch for list-jobs: $BRANCH"
+          COUNT="$(aws amplify list-jobs \
             --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
             --branch-name "$BRANCH" \
             --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'] | length(@)" \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ vars.AWS_REGION || 'us-east-1' }} 2>/tmp/amplify_err || true)"
+          if grep -q "NotFoundException" /tmp/amplify_err 2>/dev/null; then
+            echo "Branch not found during list-jobs; proceeding as 0 pending."
+            COUNT=0
+          fi
           echo "pending_count=$COUNT" >> $GITHUB_OUTPUT
           echo "Pending/running jobs: $COUNT"
 
@@ -149,6 +190,7 @@ jobs:
           # Get the branch name (default to main if not set)
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
+          BRANCH=${SANITIZED_BRANCH:-$BRANCH}
           
           echo "Starting Amplify build for app: ${{ steps.get_amplify_app.outputs.app_id }}, branch: $BRANCH"
           
@@ -173,6 +215,7 @@ jobs:
           # Get the latest build for the branch
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
+          BRANCH=${SANITIZED_BRANCH:-$BRANCH}
           
           echo "Checking build status for branch: $BRANCH"
           
@@ -217,6 +260,7 @@ jobs:
         run: |
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
+          BRANCH=${SANITIZED_BRANCH:-$BRANCH}
           APP_ID="${{ steps.get_amplify_app.outputs.app_id }}"
           
           APP_INFO=$(aws amplify get-app \

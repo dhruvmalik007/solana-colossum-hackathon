@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { TxStatusState } from "@repo/ui/components/TxnStatus";
 import { useWalletIdentity } from "../solana/useWalletIdentity";
+import { API_BASE } from "@/lib/client/api";
 
 // dynamic requires to avoid version coupling
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -22,7 +23,8 @@ export function usePlaceRangeOrder(slug: string) {
       setState({ stage: "signing" });
       const price = (Number(omin) + Number(omax)) / 2;
       const size = Number(volume);
-      const res = await fetch("/api/orders", {
+      const base = (API_BASE && API_BASE.replace(/\/$/, "")) || "/api";
+      const res = await fetch(`${base}/orders`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ slug, marketId: slug, side: "Buy", price, size }),

@@ -1,20 +1,16 @@
-import HomeMarketsClient from "../components/HomeMarketsClient";
 import { FadeIn } from "@repo/ui/components/fade-in";
+import { LandingHero } from "@repo/ui/components/LandingHero";
+import MarketsSection from "../components/MarketsSection";
 
 export default async function Home(): Promise<any> {
   return (
     <div className="space-y-6">
       <FadeIn>
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Solana DeFi Prediction Markets</h1>
-          <p className="text-muted-foreground text-sm">
-            Building a continuous  prediction marketplace platform on solana marketplace.
-          </p>
-        </div>
+        <LandingHero />
       </FadeIn>
-      
+
       <FadeIn delay={0.1}>
-        <HomeMarketsClient />
+        <MarketsSection />
       </FadeIn>
     </div>
   );

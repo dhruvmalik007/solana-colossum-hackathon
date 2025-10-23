@@ -13,6 +13,7 @@ import { Select, SelectTrigger, SelectContent, SelectValue } from "@repo/ui/comp
 import { Button } from "@repo/ui/components/ui/button";
 import { TxnStatus, type TxStatusState } from "@repo/ui/components/TxnStatus";
 import { MarketCreationSchema, type MarketCreationInput } from "../../lib/validation/market-schema";
+import { API_BASE } from "@/lib/client/api";
 
 const steps = [
   { id: "type", label: "Market Type" },
@@ -91,7 +92,7 @@ function CreateMarketContent() : any {
         category: marketType || undefined,
         resolutionTime: undefined as string | undefined,
       };
-      const res = await fetch("/api/markets", {
+      const res = await fetch(`${(API_BASE || "").replace(/\/$/, "")}/markets`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),

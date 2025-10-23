@@ -106,6 +106,52 @@ jobs:
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
           echo "Amplify App ID: $APP_ID"
 
+      - name: Debug Amplify App & Branches
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ vars.AMPLIFY_BRANCH_OVERRIDE || github.ref_name }}"
+          echo "[Debug] Region: ${{ secrets.AWS_REGION }}"
+          echo "[Debug] App ID: $APP_ID"
+          echo "[Debug] Branch (from github.ref_name): $BRANCH_NAME"
+          echo "[Debug] App Info:"
+          aws amplify get-app \
+            --app-id "$APP_ID" \
+            --query 'app.{name:name,repository:repository,defaultDomain:defaultDomain,platform:platform}' \
+            --output table \
+            --region ${{ secrets.AWS_REGION }} || true
+
+      - name: Associate Custom Domain (optional)
+        if: ${{ secrets.AMPLIFY_DOMAIN_NAME != '' || vars.AMPLIFY_DOMAIN_NAME != '' }}
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          DOMAIN="${{ secrets.AMPLIFY_DOMAIN_NAME || vars.AMPLIFY_DOMAIN_NAME }}"
+          BRANCH_NAME="${SANITIZED_BRANCH:-${{ github.ref_name }}}"
+          echo "Associating domain $DOMAIN with branch $BRANCH_NAME"
+          # Try to create association; if it already exists, update it.
+          aws amplify create-domain-association \
+            --app-id "$APP_ID" \
+            --domain-name "$DOMAIN" \
+            --sub-domain-settings prefix="$BRANCH_NAME",branchName="$BRANCH_NAME" \
+            --enable-auto-sub-domain \
+            --region ${{ secrets.AWS_REGION }} 2>/tmp/domain_err || true
+          if grep -q "AlreadyExistsException" /tmp/domain_err 2>/dev/null; then
+            echo "Domain association exists, updating mapping"
+            aws amplify update-domain-association \
+              --app-id "$APP_ID" \
+              --domain-name "$DOMAIN" \
+              --sub-domain-settings prefix="$BRANCH_NAME",branchName="$BRANCH_NAME" \
+              --enable-auto-sub-domain \
+              --region ${{ secrets.AWS_REGION }} || true
+          fi
+          echo "Domain association triggered (ACM certificate issuance is automatic)."
+          echo "You may need to add/verify DNS records if the domain is not in Route53."
+          echo "[Debug] Existing branches:"
+          aws amplify list-branches \
+            --app-id "$APP_ID" \
+            --query 'branches[].branchName' \
+            --output text \
+            --region ${{ secrets.AWS_REGION }} || true
+
       - name: Update Environment Variables (if needed)
         if: github.event_name == 'repository_dispatch'
         run: |
@@ -127,32 +173,68 @@ jobs:
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
+          # Sanitize branch for Amplify subdomain rules (replace unsupported chars)
+          SANITIZED=$(echo "$BRANCH_NAME" | sed 's#[^A-Za-z0-9._-]#-#g')
+          echo "SANITIZED_BRANCH=$SANITIZED" >> $GITHUB_ENV
           echo "Ensuring Amplify branch exists: $BRANCH_NAME (App: $APP_ID)"
-          if ! aws amplify get-branch \
+          ATTEMPTS=0
+          MAX_ATTEMPTS=6
+          until aws amplify get-branch \
             --app-id "$APP_ID" \
-            --branch-name "$BRANCH_NAME" \
-            --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; then
-            echo "Branch '$BRANCH_NAME' not found in Amplify. Creating..."
+            --branch-name "$SANITIZED" \
+            --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; do
+            if [ $ATTEMPTS -ge $MAX_ATTEMPTS ]; then
+              echo "::error::Branch '$BRANCH_NAME' not found after $MAX_ATTEMPTS attempts."
+              echo "Existing branches:" 
+              aws amplify list-branches --app-id "$APP_ID" --query 'branches[].branchName' --output text --region ${{ secrets.AWS_REGION }} || true
+              exit 1
+            fi
+            echo "Branch '$BRANCH_NAME' not found. Creating (attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS)..."
             aws amplify create-branch \
               --app-id "$APP_ID" \
-              --branch-name "$BRANCH_NAME" \
-              --region ${{ secrets.AWS_REGION }}
-            echo "Branch '$BRANCH_NAME' created."
-          else
-            echo "Branch '$BRANCH_NAME' already exists in Amplify."
-          fi
+              --branch-name "$SANITIZED" \
+              --region ${{ secrets.AWS_REGION }} || true
+            echo "Waiting 15s before re-check..."
+            sleep 15
+            ATTEMPTS=$((ATTEMPTS+1))
+          done
+          echo "Branch '$SANITIZED' is present in Amplify."
+
+      - name: Set branch stage and env vars
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          BRANCH_NAME="${SANITIZED_BRANCH:-$BRANCH_NAME}"
+          ENV="${{ steps.env.outputs.environment }}"
+          STAGE="DEVELOPMENT"
+          if [ "$ENV" = "staging" ]; then STAGE="BETA"; fi
+          if [ "$ENV" = "prod" ]; then STAGE="PRODUCTION"; fi
+          echo "Setting stage=$STAGE and env vars on branch $BRANCH_NAME"
+          aws amplify update-branch \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --stage "$STAGE" \
+            --environment-variables "ENVIRONMENT=$ENV,AWS_REGION=${{ secrets.AWS_REGION }},ENFORCE_HTTPS=1" \
+            --region ${{ secrets.AWS_REGION }} || true
 
       - name: Check for existing running build
         id: check_pending
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
-          COUNT=$(aws amplify list-jobs \
+          BRANCH_NAME="${SANITIZED_BRANCH:-$BRANCH_NAME}"
+          echo "Using branch for list-jobs: $BRANCH_NAME"
+          # Handle eventual consistency: if NotFound, treat as 0
+          COUNT="$(aws amplify list-jobs \
             --app-id "$APP_ID" \
             --branch-name "$BRANCH_NAME" \
             --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'] | length(@)" \
             --output text \
-            --region ${{ secrets.AWS_REGION }})
+            --region ${{ secrets.AWS_REGION }} 2>/tmp/amplify_err || true)"
+          if grep -q "NotFoundException" /tmp/amplify_err 2>/dev/null; then
+            echo "Branch not found during list-jobs; proceeding as 0 pending."
+            COUNT=0
+          fi
           echo "pending_count=$COUNT" >> $GITHUB_OUTPUT
           echo "Pending/running jobs: $COUNT"
 
@@ -162,17 +244,30 @@ jobs:
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
+          BRANCH_NAME="${SANITIZED_BRANCH:-$BRANCH_NAME}"
           
           echo "Triggering build for App ID: $APP_ID, Branch: $BRANCH_NAME"
           
           # Start a new build
-          JOB_ID=$(aws amplify start-job \
+          JOB_ID="$(aws amplify start-job \
             --app-id "$APP_ID" \
             --branch-name "$BRANCH_NAME" \
             --job-type RELEASE \
             --query 'jobSummary.jobId' \
             --output text \
-            --region ${{ secrets.AWS_REGION }})
+            --region ${{ secrets.AWS_REGION }} 2>/tmp/start_err || true)"
+          if grep -q "NotFoundException" /tmp/start_err 2>/dev/null; then
+            echo "Branch not found during start-job. Creating and retrying..."
+            aws amplify create-branch --app-id "$APP_ID" --branch-name "$BRANCH_NAME" --region ${{ secrets.AWS_REGION }} || true
+            sleep 10
+            JOB_ID=$(aws amplify start-job \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH_NAME" \
+              --job-type RELEASE \
+              --query 'jobSummary.jobId' \
+              --output text \
+              --region ${{ secrets.AWS_REGION }})
+          fi
           
           echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
           echo "Build triggered with Job ID: $JOB_ID"
@@ -183,12 +278,17 @@ jobs:
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
-          JOB_ID=$(aws amplify list-jobs \
+          BRANCH_NAME="${SANITIZED_BRANCH:-$BRANCH_NAME}"
+          JOB_ID="$(aws amplify list-jobs \
             --app-id "$APP_ID" \
             --branch-name "$BRANCH_NAME" \
             --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'] | [0].jobId" \
             --output text \
-            --region ${{ secrets.AWS_REGION }})
+            --region ${{ secrets.AWS_REGION }} 2>/tmp/list_err || true)"
+          if grep -q "NotFoundException" /tmp/list_err 2>/dev/null; then
+            echo "Branch not found during list-jobs; no existing job."
+            JOB_ID=""
+          fi
           echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
           echo "Using existing Job ID: $JOB_ID"
 
@@ -196,6 +296,7 @@ jobs:
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
+          BRANCH_NAME="${SANITIZED_BRANCH:-$BRANCH_NAME}"
           JOB_ID="${{ steps.trigger_build.outputs.job_id || steps.existing_job.outputs.job_id }}"
           
           echo "Waiting for build to complete..."
@@ -235,6 +336,7 @@ jobs:
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
+          BRANCH_NAME="${SANITIZED_BRANCH:-$BRANCH_NAME}"
           JOB_ID="${{ steps.trigger_build.outputs.job_id || steps.existing_job.outputs.job_id }}"
           echo "Fetching Amplify logs for App: $APP_ID, Branch: $BRANCH_NAME, Job: $JOB_ID"
           sudo apt-get update && sudo apt-get install -y jq > /dev/null 2>&1 || true
@@ -278,6 +380,7 @@ jobs:
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
           BRANCH_NAME="${{ github.ref_name }}"
+          BRANCH_NAME="${SANITIZED_BRANCH:-$BRANCH_NAME}"
           
           # Get app default domain
           APP_INFO=$(aws amplify get-app \
@@ -302,6 +405,26 @@ jobs:
           
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Deployment URL: $URL"
+
+      - name: Verify Deployment URL Reachable
+        if: success()
+        run: |
+          URL="${{ steps.deployment_url.outputs.url }}"
+          echo "Verifying URL: $URL"
+          ATTEMPTS=0
+          MAX=15
+          while [ $ATTEMPTS -lt $MAX ]; do
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" "$URL" || echo 000)
+            echo "Attempt $((ATTEMPTS+1))/$MAX: HTTP $CODE"
+            if [ "$CODE" -ge 200 ] && [ "$CODE" -lt 400 ]; then
+              echo "URL is reachable (HTTP $CODE)"
+              exit 0
+            fi
+            sleep 10
+            ATTEMPTS=$((ATTEMPTS+1))
+          done
+          echo "::warning::URL not reachable yet. It may take time for CloudFront to propagate."
+          exit 0
 
       - name: Deployment Summary
         if: success()

@@ -44,6 +44,17 @@ Parameters:
     Default: https://api.devnet.solana.com
     Description: Solana devnet RPC endpoint
 
+  ApiBaseUrl:
+    Type: String
+    Default: http://localhost:3002
+    Description: Base URL for API (apps/api) used by web client
+
+
+  WebOrigin:
+    Type: String
+    Default: http://localhost:3000
+    Description: Web app origin for CORS and downstream services
+
 Resources:
   # ============================================
   # DynamoDB Table for API Response Caching
@@ -71,6 +82,47 @@ Resources:
           Value: !Ref Environment
         - Key: Application
           Value: SolanaPredictionMarkets
+
+  # ============================================
+  # DynamoDB Orders Table with GSIs for top-of-book queries
+  # ============================================
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'orders-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: marketSide
+          AttributeType: S
+        - AttributeName: sort
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: orders_by_market_buy
+          KeySchema:
+            - AttributeName: marketSide
+              KeyType: HASH
+            - AttributeName: sort
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: orders_by_market_sell
+          KeySchema:
+            - AttributeName: marketSide
+              KeyType: HASH
+            - AttributeName: sort
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
 
   # ============================================
   # Secrets Manager for Sensitive Configuration
@@ -217,8 +269,14 @@ Resources:
           Value: !Ref SolanaMainnetRPC
         - Name: NEXT_PUBLIC_SOLANA_DEVNET_RPC
           Value: !Ref SolanaDevnetRPC
+        - Name: NEXT_PUBLIC_API_BASE_URL
+          Value: !Ref ApiBaseUrl
+        - Name: WEB_ORIGIN
+          Value: !Ref WebOrigin
         - Name: DYNAMODB_CACHE_TABLE_NAME
           Value: !Ref APICacheTable
+        - Name: DYNAMODB_TABLE_ORDERS
+          Value: !Ref OrdersTable
       CustomRules:
         - Source: /<*>
           Target: /index.html

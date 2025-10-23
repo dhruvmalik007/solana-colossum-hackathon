@@ -23,6 +23,9 @@
     "typescript": "latest"
   },
   "dependencies": {
+    "framer-motion": "^11.11.1",
+    "@copilotkit/react-core": "^1.10.6",
+    "@copilotkit/react-ui": "^1.0.0",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-menubar": "^1.1.16",
     "@radix-ui/react-progress": "^1.1.7",
@@ -50,6 +53,7 @@
       "./src/hooks/*.tsx"
     ],
     "./components/*": "./src/components/*.tsx",
-    "./components/ui/*": "./src/components/ui/*.tsx"
+    "./components/ui/*": "./src/components/ui/*.tsx",
+    "./components/copilot/*": "./src/components/copilot/*.tsx"
   }
 }

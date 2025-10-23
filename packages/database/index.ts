@@ -97,8 +97,11 @@ export type Order = {
 
 export async function putOrder(order: Order) {
   const table = env.DYNAMODB_TABLE_ORDERS;
+  const marketSide = `${order.marketId}#${order.side}`;
+  // Use integer sort key based on price for stable ordering across GSIs
+  const sort = Math.floor(Number(order.price) * 1_000_000);
   await ddb.send(
-    new PutCommand({ TableName: table, Item: order })
+    new PutCommand({ TableName: table, Item: { ...order, marketSide, sort } })
   );
 }
 
@@ -187,6 +190,64 @@ export async function getCreatorProfile(userId: string) {
     new GetCommand({ TableName: env.DYNAMODB_TABLE_CREATOR_PROFILES, Key: { userId } })
   );
   return (out.Item as CreatorProfile) ?? null;
+}
+
+// Comments
+export type Comment = {
+  id: string;
+  marketId: string;
+  userId: string;
+  parentId?: string;
+  text: string;
+  votes: number;
+  createdAt: string;
+};
+
+export async function putComment(comment: Comment) {
+  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_COMMENTS, Item: comment }));
+}
+
+export async function listCommentsByMarket(marketId: string) {
+  const out = await ddb.send(
+    new ScanCommand({ TableName: env.DYNAMODB_TABLE_COMMENTS, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
+  );
+  const items = (out.Items as Comment[]) ?? [];
+  items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return items;
+}
+
+export async function updateCommentVotes(id: string, delta: number) {
+  await ddb.send(
+    new UpdateCommand({
+      TableName: env.DYNAMODB_TABLE_COMMENTS,
+      Key: { id },
+      UpdateExpression: "SET votes = if_not_exists(votes, :zero) + :d",
+      ExpressionAttributeValues: { ":d": delta, ":zero": 0 },
+    })
+  );
+}
+
+// Embeds
+export type Embed = {
+  id: string;
+  marketId: string;
+  url: string;
+  source: string;
+  html?: string;
+  createdAt: string;
+};
+
+export async function putEmbed(embed: Embed) {
+  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_EMBEDS, Item: embed }));
+}
+
+export async function listEmbedsByMarket(marketId: string) {
+  const out = await ddb.send(
+    new ScanCommand({ TableName: env.DYNAMODB_TABLE_EMBEDS, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
+  );
+  const items = (out.Items as Embed[]) ?? [];
+  items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return items;
 }
 
 export * from "./schemas";

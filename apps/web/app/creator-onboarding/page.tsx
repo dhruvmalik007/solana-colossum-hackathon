@@ -11,6 +11,7 @@ import { Input } from "@repo/ui/components/ui/input";
 import { Label } from "@repo/ui/components/ui/label";
 import { Textarea } from "@repo/ui/components/ui/textarea";
 import type { CreatorRole, CreatorOnboardingStep, PortfolioData } from "../../lib/types/creator";
+import { API_BASE } from "@/lib/client/api";
 
 const steps = [
   { id: "role-select", label: "Select Role" },
@@ -60,7 +61,7 @@ export default function CreatorOnboardingPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/portfolio", {
+      const res = await fetch(`${(API_BASE || "").replace(/\/$/, "")}/portfolio`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ walletAddress: primaryWallet.address }),
@@ -81,7 +82,7 @@ export default function CreatorOnboardingPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/creator-profile", {
+      const res = await fetch(`${(API_BASE || "").replace(/\/$/, "")}/creator-profile`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
