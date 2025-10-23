@@ -200,10 +200,15 @@ jobs:
             --region ${{ secrets.AWS_REGION }} || true
 
       - name: Associate Custom Domain (optional)
-        if: ${{ secrets.AMPLIFY_DOMAIN_NAME != '' || vars.AMPLIFY_DOMAIN_NAME != '' }}
         run: |
           APP_ID="${{ steps.amplify_app.outputs.app_id }}"
-          DOMAIN="${{ secrets.AMPLIFY_DOMAIN_NAME || vars.AMPLIFY_DOMAIN_NAME }}"
+          # Resolve domain from secrets or repo vars; skip if empty
+          DOMAIN="${{ secrets.AMPLIFY_DOMAIN_NAME }}"
+          if [ -z "$DOMAIN" ]; then DOMAIN="${{ vars.AMPLIFY_DOMAIN_NAME }}"; fi
+          if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "None" ]; then
+            echo "No AMPLIFY_DOMAIN_NAME provided in secrets/vars. Skipping domain association."
+            exit 0
+          fi
           BRANCH_NAME="${SANITIZED_BRANCH:-${{ github.ref_name }}}"
           echo "Associating domain $DOMAIN with branch $BRANCH_NAME"
           # Try to create association; if it already exists, update it.
