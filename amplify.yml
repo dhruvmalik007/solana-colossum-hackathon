@@ -14,13 +14,16 @@ applications:
             - corepack prepare pnpm@9.0.0 --activate
             - echo "pnpm version:"
             - pnpm --version
+            - echo "Configuring pnpm for optimal memory usage..."
+            - pnpm config set store-dir $HOME/.pnpm-store
+            - pnpm config set node-linker hoisted
             - echo "Ensuring jq is installed (for Secrets Manager parsing)..."
             - |
               if ! command -v jq >/dev/null 2>&1; then
                 (yum -y install jq || (apt-get update && apt-get install -y jq) || true)
               fi
             - echo "Installing dependencies with frozen lockfile..."
-            - pnpm install --frozen-lockfile || (echo "Frozen lockfile failed; retrying without frozen lockfile" && pnpm install --no-frozen-lockfile)
+            - pnpm install --frozen-lockfile --prefer-offline || (echo "Frozen lockfile failed; retrying without frozen lockfile" && pnpm install --no-frozen-lockfile --prefer-offline)
             - echo "Rebuilding native modules (lightningcss, swc) if needed..."
             - pnpm rebuild lightningcss @next/swc || pnpm rebuild || true
             - echo "Dependencies installed successfully"
@@ -53,8 +56,9 @@ applications:
                   echo "Warning: OpenAI API key not found. AI insights feature will be disabled."
                 fi
               fi
-            - echo "Building web app..."
+            - echo "Building web app with memory optimizations..."
             - export NEXT_DISABLE_LIGHTNINGCSS=1
+            - export NEXT_DISABLE_SOURCEMAPS=1
             - pnpm run build
             - echo "Build completed successfully"
       artifacts:
@@ -63,9 +67,8 @@ applications:
           - '**/*'
       cache:
         paths:
+          - $HOME/.pnpm-store/**/*
           - node_modules/**/*
-          - .pnpm-store/**/*
-          - ../../packages/*/node_modules/**/*
 
 # Environment-specific overrides (optional)
 # You can add backend configuration here if using Amplify Gen 2 backend
