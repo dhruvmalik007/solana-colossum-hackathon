@@ -1,9 +1,18 @@
+[toolchain]
+anchor_version = "0.32.1"
+
 [features]
 seeds = true
 skip-lint = false
 
 [programs.localnet]
-solana_prediction = ""
+solana_prediction = "HaDRStkEsHfomv9YPuUiJWsAHsF36NN8n3t6uUmuDuEo"
+
+[programs.devnet]
+solana_prediction = "HaDRStkEsHfomv9YPuUiJWsAHsF36NN8n3t6uUmuDuEo"
+
+[programs.mainnet]
+solana_prediction = "HaDRStkEsHfomv9YPuUiJWsAHsF36NN8n3t6uUmuDuEo"
 
 [registry]
 url = "https://anchor.projectserum.com"

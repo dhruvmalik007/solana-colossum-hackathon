@@ -10,9 +10,17 @@ name = "solana_prediction"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-anchor-lang = "0.29.0"
-solana-program = "1.18.26"
+anchor-lang = { version = "0.32.1", features = ["init-if-needed", "idl-build"] }
 
 [features]
 idk-build = []
 no-entrypoint = []
+# Expose idl-build to satisfy Anchor IDL generation
+idl-build = ["anchor-lang/idl-build"]
+# Silence rustc check-cfg warnings for features used by Anchor macros
+anchor-debug = []
+cpi = []
+custom-heap = []
+custom-panic = []
+no-idl = []
+no-log-ix-name = []

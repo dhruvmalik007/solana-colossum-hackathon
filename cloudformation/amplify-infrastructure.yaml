@@ -80,6 +80,94 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
+
+  # ============================================
+  # DynamoDB Trades Table with GSIs (by market time, by position time)
+  # ============================================
+  TradesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'trades-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: marketId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+        - AttributeName: positionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: trades_by_market_time
+          KeySchema:
+            - AttributeName: marketId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: trades_by_position_time
+          KeySchema:
+            - AttributeName: positionId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================
+  # DynamoDB Positions Table with GSIs (by owner, by market)
+  # ============================================
+  PositionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'positions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: owner
+          AttributeType: S
+        - AttributeName: marketId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: positions_by_owner
+          KeySchema:
+            - AttributeName: owner
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: positions_by_market
+          KeySchema:
+            - AttributeName: marketId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
         - Key: Application
           Value: SolanaPredictionMarkets
 
@@ -198,7 +286,11 @@ Resources:
                   - dynamodb:DeleteItem
                   - dynamodb:Query
                   - dynamodb:Scan
-                Resource: !GetAtt APICacheTable.Arn
+                Resource:
+                  - !GetAtt APICacheTable.Arn
+                  - !GetAtt OrdersTable.Arn
+                  - !GetAtt TradesTable.Arn
+                  - !GetAtt PositionsTable.Arn
         - PolicyName: AmplifySecretsAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -277,6 +369,10 @@ Resources:
           Value: !Ref APICacheTable
         - Name: DYNAMODB_TABLE_ORDERS
           Value: !Ref OrdersTable
+        - Name: DYNAMODB_TABLE_TRADES
+          Value: !Ref TradesTable
+        - Name: DYNAMODB_TABLE_POSITIONS
+          Value: !Ref PositionsTable
       CustomRules:
         - Source: /<*>
           Target: /index.html
@@ -331,7 +427,11 @@ Resources:
                   - dynamodb:DeleteItem
                   - dynamodb:Query
                   - dynamodb:Scan
-                Resource: !GetAtt APICacheTable.Arn
+                Resource:
+                  - !GetAtt APICacheTable.Arn
+                  - !GetAtt OrdersTable.Arn
+                  - !GetAtt TradesTable.Arn
+                  - !GetAtt PositionsTable.Arn
         - PolicyName: SecretsAccess
           PolicyDocument:
             Version: '2012-10-17'

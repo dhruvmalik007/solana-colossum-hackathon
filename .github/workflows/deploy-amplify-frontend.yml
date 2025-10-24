@@ -301,6 +301,21 @@ jobs:
             --environment-variables "ENVIRONMENT=$ENV,AWS_REGION=${{ secrets.AWS_REGION }},ENFORCE_HTTPS=1" \
             --region ${{ secrets.AWS_REGION }} || true
 
+      - name: Compute Branch URL and Update App Env Vars
+        run: |
+          APP_ID="${{ steps.amplify_app.outputs.app_id }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          BRANCH_NAME="${SANITIZED_BRANCH:-$BRANCH_NAME}"
+          DEFAULT_DOMAIN=$(aws amplify get-app --app-id "$APP_ID" --query 'app.defaultDomain' --output text --region ${{ secrets.AWS_REGION }})
+          if [ -z "$DEFAULT_DOMAIN" ] || [ "$DEFAULT_DOMAIN" = "None" ]; then DEFAULT_DOMAIN="${APP_ID}.amplifyapp.com"; fi
+          URL="https://${BRANCH_NAME}.${DEFAULT_DOMAIN}"
+          echo "Updating branch env WEB_ORIGIN to $URL"
+          aws amplify update-branch \
+            --app-id "$APP_ID" \
+            --branch-name "$BRANCH_NAME" \
+            --environment-variables "WEB_ORIGIN=$URL" \
+            --region ${{ secrets.AWS_REGION }} || true
+
       - name: Check for existing running build
         id: check_pending
         run: |

@@ -122,6 +122,101 @@ The complete technical specifications have been broken down into focused documen
 
 **Key Formulas:**
 ```
+
+### PDAs & Accounts
+
+```
+MarketPDA         = seeds["market", market_symbol]
+OrderBookPDA      = seeds["orderbook", MarketPDA]
+AmmPoolPDA        = seeds["amm", MarketPDA]
+VaultBasePDA      = seeds["vault", MarketPDA, mint]
+FeeVaultPDA       = seeds["fees", MarketPDA, mint]
+UserPositionPDA   = seeds["position", MarketPDA, user]
+OpenOrdersPDA     = seeds["oo", MarketPDA, user]
+StatsPDA          = seeds["stats", MarketPDA]
+```
+
+```rust
+#[account]
+pub struct Market {
+    pub authority: Pubkey,
+    pub symbol: [u8; 16],
+    pub outcome_range: (i64, i64),
+    pub resolution_time: i64,
+    pub status: MarketStatus,
+    pub oracle: Pubkey,
+    pub bump: u8,
+}
+
+#[account]
+pub struct AmmPool {
+    pub market: Pubkey,
+    pub k_invariant: u64,
+    pub sigma_min: u64,
+    pub vault_base: Pubkey,
+    pub fee_vault: Pubkey,
+}
+
+#[account]
+pub struct Position {
+    pub owner: Pubkey,
+    pub market: Pubkey,
+    pub size: u64,
+    pub collateral_locked: u64,
+    pub dist_params: DistributionParams,
+}
+```
+
+### Instruction I/O
+
+```rust
+// Create Market
+pub fn create_distributional_market(ctx: Context<CreateMarket>, params: MarketParams, initial_distribution: DistributionParams, initial_liquidity: u64) -> Result<()>
+
+// Execute Trade (hybrid router)
+pub fn execute_distributional_trade(ctx: Context<ExecuteTrade>, new_distribution: DistributionParams, position_size: u64, slippage_bps: u16) -> Result<()>
+
+// Place/Cancel Limit Order (CLOB)
+pub fn place_limit_order(ctx: Context<PlaceLimitOrder>, price: u64, size: u64, side: Side, tif: u64) -> Result<()>
+pub fn cancel_order(ctx: Context<CancelOrder>, order_id: u64) -> Result<()>
+
+// Resolve & Claim
+pub fn resolve_market(ctx: Context<ResolveMarket>, outcome_value: i64, proof: Vec<u8>) -> Result<()>
+pub fn claim_payout(ctx: Context<ClaimPayout>) -> Result<()>
+```
+
+### Events
+
+```rust
+#[event]
+pub struct TradeEvent { pub market: Pubkey, pub owner: Pubkey, pub size: u64, pub avg_price: u64, pub ts: i64 }
+
+#[event]
+pub struct OrderPlaced { pub market: Pubkey, pub owner: Pubkey, pub order_id: u64, pub price: u64, pub size: u64, pub side: u8 }
+
+#[event]
+pub struct MarketResolved { pub market: Pubkey, pub outcome: i64, pub ts: i64 }
+```
+
+### Sequence (Execute Trade)
+
+```mermaid
+sequenceDiagram
+  participant UI as Client UI
+  participant RP as Router Program
+  participant C as CLOB
+  participant A as AMM
+  participant SPL as SPL Token
+  UI->>RP: execute_distributional_trade(params, size)
+  RP->>C: match best available
+  C-->>RP: clob_fill
+  alt remaining > 0
+    RP->>A: quote/swap remainder
+    A-->>RP: amm_fill
+  end
+  RP->>SPL: token transfers & fees
+  RP-->>UI: TradeEvent
+```
 ‖f‖₂ = √(∫₋∞^∞ f(x)² dx) = k
 
 φ(x; μ, σ) = (1/√(2πσ²)) · exp(-(x-μ)²/(2σ²))
