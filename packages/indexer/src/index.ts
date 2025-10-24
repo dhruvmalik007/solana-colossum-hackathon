@@ -4,7 +4,7 @@ import { putMarket, putOrder, putTrade, type Market, type Order, type Trade } fr
 
 const RPC_URL = process.env.RPC_URL || "https://api.devnet.solana.com";
 const WS_URL = process.env.WS_URL || "wss://api.devnet.solana.com";
-const PROGRAM_ID = process.env.PROGRAM_ID || "So1PrediCt1onWrapPer111111111111111111111111111";
+const PROGRAM_ID = process.env.PROGRAM_ID || "";
 
 // Event discriminators (8-byte hash of event name)
 const EVENT_DISCRIMINATORS = {
@@ -24,9 +24,34 @@ type EventLog = {
 };
 
 function decodeEvent(log: string, txSig: string, slot: number, ixIndex: number): EventLog | null {
-  // Simplified: real impl parses base64 log, matches discriminator, Borsh-decodes
-  // For now, return null (to be implemented with actual IDL)
-  return null;
+  // Anchor logs are prefixed with "Program log: "; strip and parse our lightweight IDX format
+  const line = log.replace(/^Program log: /, "").trim();
+  if (!line.startsWith("IDX:")) return null;
+  const rest = line.slice(4); // after 'IDX:'
+  const sep = rest.indexOf("|");
+  const eventName = sep === -1 ? rest : rest.slice(0, sep);
+  const kvStr = sep === -1 ? "" : rest.slice(sep + 1);
+  const data: Record<string, any> = {};
+  if (kvStr) {
+    for (const part of kvStr.split("|")) {
+      const [k, v] = part.split("=");
+      if (!k) continue;
+      const key = k.trim();
+      const valRaw = (v ?? "").trim();
+      const numKeys = new Set([
+        "order_id",
+        "price_bps",
+        "size",
+        "ts",
+        "l0",
+        "dynamic_on",
+        "fee_bps",
+        "expiry_ts",
+      ]);
+      data[key] = numKeys.has(key) ? Number(valRaw) : valRaw;
+    }
+  }
+  return { txSig, slot, ixIndex, eventName, data };
 }
 
 async function upsertEvent(event: EventLog) {
@@ -34,14 +59,31 @@ async function upsertEvent(event: EventLog) {
   
   try {
     switch (event.eventName) {
-      case "MarketCreated": {
+      case "PmAmmInitialized": {
+        const id = String(event.data.market || `${event.txSig}:${event.ixIndex}`);
         const m: Market = {
-          id: event.data.slug || idemp,
-          slug: event.data.slug || idemp,
-          title: event.data.slug || "Untitled",
+          id,
+          slug: id,
+          title: id,
           description: undefined,
           category: undefined,
-          createdAt: new Date(event.data.ts * 1000).toISOString(),
+          createdAt: new Date((event.data.ts || 0) * 1000).toISOString(),
+          resolutionTime: undefined,
+          status: "Active",
+        };
+        await putMarket(m);
+        console.log(`[indexer] PmAmmInitialized: ${m.id} l0=${event.data.l0} fee_bps=${event.data.fee_bps}`);
+        break;
+      }
+      case "MarketCreated": {
+        const id = String(event.data.market || idemp);
+        const m: Market = {
+          id,
+          slug: id,
+          title: id,
+          description: undefined,
+          category: undefined,
+          createdAt: new Date((event.data.ts || 0) * 1000).toISOString(),
           resolutionTime: undefined,
           status: "Active",
         };

@@ -157,6 +157,63 @@ export async function listTradesByMarket(marketId: string) {
   return (out.Items as Trade[]) ?? [];
 }
 
+// GSI: trades_by_market_time (PK=marketId, SK=createdAt)
+export async function listTradesByMarketTime(marketId: string, limit = 100, oldestFirst = false) {
+  const out = await ddb.send(
+    new QueryCommand({
+      TableName: env.DYNAMODB_TABLE_TRADES,
+      IndexName: "trades_by_market_time",
+      KeyConditionExpression: "marketId = :m",
+      ExpressionAttributeValues: { ":m": marketId },
+      ScanIndexForward: oldestFirst, // false => newest first
+      Limit: limit,
+    })
+  );
+  return (out.Items as Trade[]) ?? [];
+}
+
+// GSI: trades_by_position_time (PK=positionId, SK=createdAt)
+export async function listTradesByPositionTime(positionId: string, limit = 100, oldestFirst = false) {
+  const out = await ddb.send(
+    new QueryCommand({
+      TableName: env.DYNAMODB_TABLE_TRADES,
+      IndexName: "trades_by_position_time",
+      KeyConditionExpression: "positionId = :p",
+      ExpressionAttributeValues: { ":p": positionId },
+      ScanIndexForward: oldestFirst,
+      Limit: limit,
+    })
+  );
+  return (out.Items as Trade[]) ?? [];
+}
+
+// Positions GSIs
+export async function listPositionsByOwner(owner: string, limit = 100) {
+  const out = await ddb.send(
+    new QueryCommand({
+      TableName: env.DYNAMODB_TABLE_POSITIONS,
+      IndexName: "positions_by_owner",
+      KeyConditionExpression: "owner = :o",
+      ExpressionAttributeValues: { ":o": owner },
+      Limit: limit,
+    })
+  );
+  return (out.Items as Position[]) ?? [];
+}
+
+export async function listPositionsByMarket(marketId: string, limit = 100) {
+  const out = await ddb.send(
+    new QueryCommand({
+      TableName: env.DYNAMODB_TABLE_POSITIONS,
+      IndexName: "positions_by_market",
+      KeyConditionExpression: "marketId = :m",
+      ExpressionAttributeValues: { ":m": marketId },
+      Limit: limit,
+    })
+  );
+  return (out.Items as Position[]) ?? [];
+}
+
 export type CreatorProfile = {
   userId: string;
   walletAddress: string;
