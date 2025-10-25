@@ -23,7 +23,7 @@ type Protocol = {
 export default function HomeProtocolsClient() {
   const { data, loading, error } = useDailyJSON<Protocol[]>(
     "home:protocols:v2",
-    `${(API_BASE || "").replace(/\/$/, "")}/protocols`,
+    `${API_BASE}/protocols`,
     24 * 60 * 60 * 1000
   );
   const list: Protocol[] = Array.isArray(data) ? data : [];

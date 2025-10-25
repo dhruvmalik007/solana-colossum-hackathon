@@ -45,7 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <CopilotSidebarClient
                   labels={{
                     title: "Assistant",
-                    initial: "Hi! How can I help you with markets today?",
+                    initial: "Hi! How can I help you in the predictions today?",
                   }}
                 />
               </SolanaProviders>

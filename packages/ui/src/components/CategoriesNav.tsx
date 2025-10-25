@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "./ui/button";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 
 const DEFAULT_CATEGORIES = [
   "Stablecoins",
@@ -23,21 +23,24 @@ export function CategoriesNav({
 }) {
   const [active, setActive] = useState(initial);
   return (
-    <div className="no-scrollbar flex items-center gap-2 overflow-x-auto py-1">
-      {categories.map((c) => (
-        <Button
-          key={c}
-          size="sm"
-          variant={c === active ? "default" : "outline"}
-          className="rounded-full"
-          onClick={() => {
-            setActive(c);
-            onChange?.(c);
-          }}
-        >
-          {c}
-        </Button>
-      ))}
-    </div>
+    <Tabs
+      value={active}
+      onValueChange={(val) => {
+        setActive(val);
+        onChange?.(val);
+      }}
+      className="w-full"
+    >
+      <TabsList className="no-scrollbar flex w-full items-center gap-1 overflow-x-auto px-1 py-1">
+        <TabsTrigger value="All" className="whitespace-nowrap rounded-full">
+          All
+        </TabsTrigger>
+        {categories.map((c) => (
+          <TabsTrigger key={c} value={c} className="whitespace-nowrap rounded-full">
+            {c}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 }

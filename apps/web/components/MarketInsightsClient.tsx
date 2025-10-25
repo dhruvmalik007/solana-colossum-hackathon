@@ -65,8 +65,7 @@ export default function MarketInsightsClient(props: {
 }) {
   const { slug, name, category, latest, change1d, seriesCount } = props;
   const producer = React.useCallback(async () => {
-    const base = (API_BASE && API_BASE.replace(/\/$/, "")) || "/api";
-    const res = await fetch(`${base}/ai/insights`, {
+    const res = await fetch(`${API_BASE}/ai/insights`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ slug, name, category, latest, change1d, series: Array.from({ length: seriesCount }) }),

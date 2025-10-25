@@ -23,8 +23,7 @@ export function usePlaceRangeOrder(slug: string) {
       setState({ stage: "signing" });
       const price = (Number(omin) + Number(omax)) / 2;
       const size = Number(volume);
-      const base = (API_BASE && API_BASE.replace(/\/$/, "")) || "/api";
-      const res = await fetch(`${base}/orders`, {
+      const res = await fetch(`${API_BASE}/orders`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ slug, marketId: slug, side: "Buy", price, size }),

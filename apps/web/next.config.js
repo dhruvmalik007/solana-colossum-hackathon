@@ -35,6 +35,19 @@ const nextConfig = {
     }
     return [];
   },
+ 
+  // Proxy API calls through Next.js to the external API base URL to prevent mixed-content in HTTPS-only mode
+  async rewrites() {
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+    if (!base) return [];
+    const dest = base.replace(/\/$/, '');
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${dest}/:path*`,
+      },
+    ];
+  },
   
   images: {
     remotePatterns: [

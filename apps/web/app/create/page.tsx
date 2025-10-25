@@ -92,7 +92,7 @@ function CreateMarketContent() : any {
         category: marketType || undefined,
         resolutionTime: undefined as string | undefined,
       };
-      const res = await fetch(`${(API_BASE || "").replace(/\/$/, "")}/markets`, {
+      const res = await fetch(`${API_BASE}/markets`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),

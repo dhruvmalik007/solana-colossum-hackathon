@@ -48,7 +48,7 @@ function baseUrl() {
 }
 
 export async function getQuote(params: QuoteRequest): Promise<QuoteResponse> {
-  const u = new URL(baseUrl() + "/api/pmamm/quote");
+  const u = new URL(baseUrl() + "/pmamm/quote");
   u.searchParams.set("market", params.market);
   u.searchParams.set("side", String(params.side));
   u.searchParams.set("size", String(params.size));
@@ -59,7 +59,7 @@ export async function getQuote(params: QuoteRequest): Promise<QuoteResponse> {
 }
 
 export async function createTradeTx(params: TradeRequest): Promise<TradeResponse> {
-  const res = await fetch(baseUrl() + "/api/pmamm/trade", {
+  const res = await fetch(baseUrl() + "/pmamm/trade", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(params),

@@ -18,7 +18,7 @@ export function useOrderBookSSE(slug: string) {
   React.useEffect(() => {
     setLoading(true);
     setError(null);
-    const url = `${(API_BASE || "").replace(/\/$/, "")}/orderbook/${encodeURIComponent(slug)}/stream`;
+    const url = `${API_BASE}/orderbook/${encodeURIComponent(slug)}/stream`;
     const es = new EventSource(url);
 
     es.onmessage = (evt) => {

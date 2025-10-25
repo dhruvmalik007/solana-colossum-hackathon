@@ -61,7 +61,7 @@ export default function CreatorOnboardingPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${(API_BASE || "").replace(/\/$/, "")}/portfolio`, {
+      const res = await fetch(`${API_BASE}/portfolio`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ walletAddress: primaryWallet.address }),
@@ -82,7 +82,7 @@ export default function CreatorOnboardingPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${(API_BASE || "").replace(/\/$/, "")}/creator-profile`, {
+      const res = await fetch(`${API_BASE}/creator-profile`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

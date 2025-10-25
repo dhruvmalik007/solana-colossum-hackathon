@@ -6,7 +6,6 @@ import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from 
 import { Button } from "@repo/ui/components/ui/button";
 import { Spinner } from "@repo/ui/components/ui/spinner";
 import { AnimatedCard } from "@repo/ui/components/animated-card";
-import { API_BASE } from "@/lib/client/api";
 
 export type Market = {
   id: string;
@@ -36,7 +35,7 @@ export default function HomeMarketsClient({ category, q, status, sort }: { categ
       if (sort) params.set("sort", sort);
       params.set("limit", "24");
       if (cursor && Number(cursor) > 0) params.set("cursor", cursor);
-      const base = (API_BASE && API_BASE.replace(/\/$/, "")) || "/api";
+      const base = API_BASE;
       return `${base}/markets?${params.toString()}`;
     },
     [category, q, status, sort]

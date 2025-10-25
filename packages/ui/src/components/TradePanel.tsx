@@ -20,6 +20,7 @@ export function TradePanel({ slug }: { slug: string }) {
   }>(null);
 
   const collateral = Math.max(0, size);
+  // Simple requirement: 110% of size as required collateral (placeholder)
   const required = Math.ceil(collateral * 1.1);
   const posted = collateral;
   const platformBps = quote?.feeBps.platformBps ?? 30;
