@@ -15,11 +15,17 @@ The design maps these specs into concrete on-chain accounts, PDAs, instructions,
 ## 1. High‑Level Architecture
 
 - On-chain program exposes a distributional market primitive supporting:
-  - Market creation with initial distribution parameters (μ, σ, step, range)
-  - Hybrid execution router: CLOB first (best price), AMM fallback
-  - Position lifecycle: open → adjust → close → claim, with collateral accounting
-  - Oracle-based resolution (Pyth) and post-resolution claims
-  - Fee plumbing (platform, creator, LP)
+
+  - Market creation with initial distribution parameters (μ, σ, step, range).
+
+  - Translation of market from the current  CLOB  market into p-AMM market setup.
+
+  - Position lifecycle: open → adjust → close → claim, with collateral accounting.
+  
+  - Oracle-based resolution (Pyth) and post-resolution claims.
+  
+  - Fee plumbing (platform, creator, LP).
+
 - Off-chain indexer/UI interprets events to render live distributions, order book, and positions (per UX specs).
 
 ---
@@ -29,16 +35,24 @@ The design maps these specs into concrete on-chain accounts, PDAs, instructions,
 PDA seed conventions ensure deterministic state layout:
 
 - Registry: `PDA("registry", authority)`
+
 - Strategy (optional future CPI routing): `PDA("strategy", registry, strategy_key)`
+
 - Market: `PDA("market", authority, slug)`
+
 - LiquidityPool: `PDA("pool", market)`
+
 - OrderBook: `PDA("orderbook", market)`
+
 - CollateralVault: `PDA("collateral", market)`
+
 - UserProfile: `PDA("user", owner)`
+
 - Position: `PDA("position", owner, market)`
+
 - PendingOrder (optional per order id): `PDA("pending", market, owner, order_id)`
 
-Account summaries:
+## Account summaries:
 
 - Registry: Program authority and bumps
 - Strategy: Mapping from strategy_key → target_program (future agent integrations)

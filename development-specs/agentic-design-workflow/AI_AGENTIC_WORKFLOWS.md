@@ -3,7 +3,20 @@
 
 ## models to be used:
 - openai / perplexity sonar
-- time series models : AWS chrnos for the time series prediction.
+
+- time series models : AWS chrnos for the time series prediction (from HF inference API Kit).
+
+- Optional: Multimodal model in order to understand the user query (voice / text / image etc) in order to fetch the correct result.
+
+
+
+
+## data sources:
+- all the data being routed through the copilotUI Kit integration. 
+    - defillama based protocol metrics 
+    - more precise oracle data streams / indexer defined fetching of the wrappers for getting program level information.
+        - TODO: integrate the indexer data fusion within the [@repo/ai](../../packages/ai) Copilot based interation for the reasoning 
+
 
 
 ## Overview
@@ -118,7 +131,12 @@ flowchart TD
 export async function getSolanaProtocolsCached() { /* uses withDynamoDBCache in prod */ }
 ```
 
-### Anomaly Detection Algorithm
+### LVR (Loss vs Rebalancing) and market arbitrage setup:
+
+
+
+
+
 
 ```python
 def detect_inefficiency(market, external_data):
@@ -135,6 +153,11 @@ def detect_inefficiency(market, external_data):
         }
     return {'opportunity': False}
 ```
+
+
+## mem0ai  agent setup:
+
+
 
 ### On-chain Execution Flow (Mermaid)
 
