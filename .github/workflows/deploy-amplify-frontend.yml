@@ -85,6 +85,18 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve CFN GitHubBranch (stable)
+        run: |
+          STACK_NAME="solana-prediction-${{ steps.env.outputs.environment }}"
+          CFN_BRANCH=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Parameters[?ParameterKey=='GitHubBranch'].ParameterValue" \
+            --output text \
+            --region ${{ secrets.AWS_REGION }} 2>/dev/null | tr -d '\n')
+          if [ -z "$CFN_BRANCH" ] || [ "$CFN_BRANCH" = "None" ]; then CFN_BRANCH="main"; fi
+          echo "CFN_BRANCH=$CFN_BRANCH" >> $GITHUB_ENV
+          echo "Using stable CFN GitHubBranch: $CFN_BRANCH"
+
       - name: Deploy CloudFormation Stack
         env:
           ENVIRONMENT: ${{ steps.env.outputs.environment }}
@@ -118,7 +130,7 @@ jobs:
             --parameter-overrides \
               Environment=$ENVIRONMENT \
               GitHubRepository=https://github.com/${{ github.repository }} \
-              GitHubBranch=${{ github.ref_name }} \
+              GitHubBranch=$CFN_BRANCH \
               GitHubToken=${{ secrets.AMPLIFY_GH_TOKEN }} \
               PrivyAppId=${{ secrets.PRIVY_APP_ID }} \
               OpenAIApiKey=${{ secrets.OPENAI_API_KEY }} \
@@ -127,7 +139,46 @@ jobs:
               ApiBaseUrl=$API_BASE \
               WebOrigin=$ORIGIN \
             --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
             --region ${{ secrets.AWS_REGION }}
+
+      - name: "CloudFormation: Describe stack and resources"
+        if: always()
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq > /dev/null 2>&1 || true
+          STACK_NAME="solana-prediction-${{ steps.env.outputs.environment }}"
+          mkdir -p cfn
+          echo "Collecting stack describe..."
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region ${{ secrets.AWS_REGION }} \
+            > cfn/describe-stacks.json || true
+          echo "Collecting stack resources..."
+          aws cloudformation list-stack-resources \
+            --stack-name "$STACK_NAME" \
+            --region ${{ secrets.AWS_REGION }} \
+            > cfn/list-stack-resources.json || true
+          echo "Collecting recent stack events..."
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK_NAME" \
+            --region ${{ secrets.AWS_REGION }} \
+            > cfn/describe-stack-events.json || true
+          echo "## CloudFormation Summary ($STACK_NAME)" >> $GITHUB_STEP_SUMMARY
+          if [ -f cfn/describe-stacks.json ]; then
+            cat cfn/describe-stacks.json | jq '{stack: .Stacks[0] | {StackName, StackStatus, CreationTime, LastUpdatedTime}}' >> $GITHUB_STEP_SUMMARY || true
+          fi
+          if [ -f cfn/describe-stack-events.json ]; then
+            echo "\n### Last 20 Events" >> $GITHUB_STEP_SUMMARY
+            cat cfn/describe-stack-events.json | jq '.StackEvents | .[0:20] | map({Timestamp, LogicalResourceId, ResourceType, ResourceStatus, ResourceStatusReason})' >> $GITHUB_STEP_SUMMARY || true
+          fi
+
+      - name: Upload CloudFormation Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudformation-${{ steps.env.outputs.environment }}-${{ github.run_id }}
+          path: cfn
+          if-no-files-found: warn
 
   deploy:
     name: Trigger Amplify Deployment
