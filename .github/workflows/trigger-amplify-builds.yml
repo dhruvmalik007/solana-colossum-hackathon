@@ -18,6 +18,9 @@ jobs:
   trigger-amplify:
     name: Trigger Amplify Build
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     
     steps:
       - name: Checkout code
@@ -26,12 +29,29 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Configure AWS Credentials
+      - name: Decide AWS auth mode
+        run: |
+          if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
+            echo "USE_OIDC=true" >> $GITHUB_ENV
+          else
+            echo "USE_OIDC=false" >> $GITHUB_ENV
+          fi
+
+      - name: Configure AWS Credentials (OIDC)
+        if: env.USE_OIDC == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Configure AWS Credentials (Keys)
+        if: env.USE_OIDC == 'false'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Get Amplify App ID
         id: get_amplify_app
@@ -70,13 +90,13 @@ jobs:
             --app-id "$APP_ID" \
             --query 'app.{name:name,repository:repository,defaultDomain:defaultDomain,platform:platform}' \
             --output table \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+            --region ${{ secrets.AWS_REGION }} || true
           echo "[Debug] Existing branches:"
           aws amplify list-branches \
             --app-id "$APP_ID" \
             --query 'branches[].branchName' \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+            --region ${{ secrets.AWS_REGION }} || true
         if: always()
 
       - name: Fetch Amplify Logs
@@ -93,14 +113,14 @@ jobs:
             --max-items 1 \
             --query 'jobSummaries[0].jobId' \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           echo "Latest Job ID: $JOB_ID"
           [ -z "$JOB_ID" ] && echo "No job found; skipping log fetch" && exit 0
           JOB_JSON=$(aws amplify get-job \
             --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
             --branch-name "$BRANCH" \
             --job-id "$JOB_ID" \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           mkdir -p amplify-logs
           echo "$JOB_JSON" > amplify-logs/job.json
           echo "## Amplify Job Summary" >> $GITHUB_STEP_SUMMARY
@@ -142,18 +162,18 @@ jobs:
           until aws amplify get-branch \
             --app-id "$APP_ID" \
             --branch-name "$SANITIZED" \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }} >/dev/null 2>&1; do
+            --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; do
             if [ $ATTEMPTS -ge $MAX_ATTEMPTS ]; then
               echo "::error::Branch '$BRANCH' not found after $MAX_ATTEMPTS attempts."
               echo "Existing branches:" 
-              aws amplify list-branches --app-id "$APP_ID" --query 'branches[].branchName' --output text --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+              aws amplify list-branches --app-id "$APP_ID" --query 'branches[].branchName' --output text --region ${{ secrets.AWS_REGION }} || true
               exit 1
             fi
             echo "Branch '$BRANCH' not found. Creating (attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS)..."
             aws amplify create-branch \
               --app-id "$APP_ID" \
               --branch-name "$SANITIZED" \
-              --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+              --region ${{ secrets.AWS_REGION }} || true
             echo "Waiting 15s before re-check..."
             sleep 15
             ATTEMPTS=$((ATTEMPTS+1))
@@ -176,7 +196,7 @@ jobs:
             --branch-name "$BRANCH" \
             --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'] | length(@)" \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }} 2>/tmp/amplify_err || true)"
+            --region ${{ secrets.AWS_REGION }} 2>/tmp/amplify_err || true)"
           if grep -q "NotFoundException" /tmp/amplify_err 2>/dev/null; then
             echo "Branch not found during list-jobs; proceeding as 0 pending."
             COUNT=0
@@ -199,7 +219,7 @@ jobs:
             --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
             --branch-name "$BRANCH" \
             --job-type RELEASE \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }}
+            --region ${{ secrets.AWS_REGION }}
           
           echo "Amplify build triggered successfully"
 
@@ -226,7 +246,7 @@ jobs:
             --max-items 1 \
             --query 'jobSummaries[0].jobId' \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           
           if [ -z "$BUILD_ID" ] || [ "$BUILD_ID" = "None" ]; then
             echo "::warning::No build found for branch $BRANCH"
@@ -240,7 +260,7 @@ jobs:
             --job-id "$BUILD_ID" \
             --query 'job.summary.status' \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           
           echo "Build $BUILD_ID status: $BUILD_STATUS"
           echo "build_status=$BUILD_STATUS" >> $GITHUB_OUTPUT
@@ -267,7 +287,7 @@ jobs:
             --app-id "$APP_ID" \
             --query 'app.defaultDomain' \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           
           DOMAIN="$APP_INFO"
           if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "None" ]; then
