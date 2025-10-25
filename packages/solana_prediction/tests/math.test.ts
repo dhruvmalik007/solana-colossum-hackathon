@@ -1,164 +1,205 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
+import { BN, Program } from "@coral-xyz/anchor";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { SolanaPrediction } from "../target/types/solana_prediction";
 import { assert } from "chai";
 
-/**
- * Unit tests for math.rs module
- * Tests Gaussian PDF, L1/L2 distance calculations, and conservative rounding
- */
-describe("Math Module Tests", () => {
+function padBytes(s: string, len: number): Uint8Array {
+  const b = Buffer.alloc(len);
+  Buffer.from(s).copy(b);
+  return b;
+}
+
+describe("solana_prediction program e2e", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-
   const program = anchor.workspace.SolanaPrediction as Program<SolanaPrediction>;
+  const wallet = provider.wallet as anchor.Wallet;
 
-  describe("Gaussian PDF", () => {
-    it("Returns 0 for invalid sigma", () => {
-      // Test with sigma <= 0
-      // Note: These are conceptual tests since math functions are internal
-      // In practice, we'd test via instructions that use these functions
-      
-      // This is a placeholder for when we expose math functions via instructions
-      // or create a separate test program that wraps math.rs
-      assert.ok(true, "Math functions tested via integration");
-    });
-
-    it("Computes correct PDF values", () => {
-      // Gaussian PDF at mu should be maximum
-      // PDF(mu, mu, sigma) = 1 / (sigma * sqrt(2π))
-      
-      // For mu=100, sigma=20:
-      // PDF(100, 100, 20) ≈ 0.0199
-      
-      // These would be tested via a test instruction that calls gauss_pdf
-      assert.ok(true, "Gaussian PDF computation verified via integration tests");
-    });
-
-    it("Is symmetric around mu", () => {
-      // PDF(mu - x, mu, sigma) should equal PDF(mu + x, mu, sigma)
-      assert.ok(true, "Symmetry verified via integration tests");
-    });
+  it("init_registry", async () => {
+    const [registry] = PublicKey.findProgramAddressSync(
+      [Buffer.from("registry"), wallet.publicKey.toBuffer()],
+      program.programId
+    );
+    await program.methods
+      .initRegistry()
+      .accounts({ registry, authority: wallet.publicKey, systemProgram: SystemProgram.programId })
+      .rpc();
+    const reg = await program.account.registry.fetch(registry);
+    assert.strictEqual(reg.authority.toBase58(), wallet.publicKey.toBase58());
   });
 
-  describe("L1 Distance", () => {
-    it("Returns 0 for invalid parameters", () => {
-      // step <= 0 or max <= min should return 0
-      assert.ok(true, "Edge cases handled");
-    });
-
-    it("Computes discretized L1 correctly", () => {
-      // Test with simple functions
-      // f(x) = 0, g(x) = 1 over [0, 10] with step 1
-      // L1 = sum of |1 - 0| * 1 = 10
-      assert.ok(true, "L1 distance computation verified");
-    });
+  it("upsert_strategy", async () => {
+    const [registry] = PublicKey.findProgramAddressSync(
+      [Buffer.from("registry"), wallet.publicKey.toBuffer()],
+      program.programId
+    );
+    const stratKey = Buffer.alloc(32); stratKey.fill(3);
+    const [strategy] = PublicKey.findProgramAddressSync(
+      [Buffer.from("strategy"), registry.toBuffer(), stratKey],
+      program.programId
+    );
+    const target = anchor.web3.Keypair.generate().publicKey;
+    await program.methods
+      .upsertStrategy([...stratKey] as any, target)
+      .accounts({ registry, strategy, authority: wallet.publicKey, systemProgram: SystemProgram.programId })
+      .rpc();
+    const strat = await program.account.strategy.fetch(strategy);
+    assert.strictEqual(Buffer.from(strat.strategyKey).toString("hex"), stratKey.toString("hex"));
+    assert.strictEqual(strat.targetProgram.toBase58(), target.toBase58());
   });
 
-  describe("L2 Distance Squared", () => {
-    it("Returns 0 for invalid parameters", () => {
-      // step <= 0 or max <= min should return 0
-      assert.ok(true, "Edge cases handled");
-    });
+  it("create_market and initialize infrastructure", async () => {
+    const slug = padBytes("BTC_DEC31_2025", 32);
+    const unit = padBytes("USD", 12);
+    const oracle = padBytes("manual", 64);
+    const params = {
+      slug: [...slug] as any,
+      outcomeMin: 10000.0,
+      outcomeMax: 200000.0,
+      unit: [...unit] as any,
+      distType: 0,
+      mu: 50000.0,
+      sigma: 10000.0,
+      sigmaMin: 1000.0,
+      step: 1000.0,
+      resolutionTime: new BN(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
+      oracleConfig: [...oracle] as any,
+      feeBpsPlatform: 25,
+      feeBpsCreator: 25,
+    };
+    const [market] = PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), wallet.publicKey.toBuffer(), Buffer.from(slug)],
+      program.programId
+    );
+    await program.methods
+      .createMarket(params as any)
+      .accounts({ market, authority: wallet.publicKey, systemProgram: SystemProgram.programId })
+      .rpc();
+    const acc = await program.account.market.fetch(market);
+    assert.strictEqual(acc.authority.toBase58(), wallet.publicKey.toBase58());
 
-    it("Computes discretized L2 squared correctly", () => {
-      // Test with simple functions
-      // f(x) = 0, g(x) = 2 over [0, 5] with step 1
-      // L2^2 = sum of (2 - 0)^2 * 1 = 4 * 5 = 20
-      assert.ok(true, "L2 squared computation verified");
-    });
+    const [pool] = PublicKey.findProgramAddressSync([Buffer.from("pool"), market.toBuffer()], program.programId);
+    const [orderbook] = PublicKey.findProgramAddressSync([Buffer.from("orderbook"), market.toBuffer()], program.programId);
+    const [collateral] = PublicKey.findProgramAddressSync([Buffer.from("collateral"), market.toBuffer()], program.programId);
+    await program.methods
+      .initializeMarketInfrastructure()
+      .accounts({ market, liquidityPool: pool, orderBook: orderbook, collateralVault: collateral, authority: wallet.publicKey, systemProgram: SystemProgram.programId })
+      .rpc();
+    const ob = await program.account.orderBook.fetch(orderbook);
+    assert.equal(ob.bestBid, 0.0);
+    assert.equal(ob.bestAsk, 0.0);
   });
 
-  describe("Conservative Rounding", () => {
-    it("Floors positive values", () => {
-      // conservative_round(5.7) should return 5
-      // This rounds against the trader (less favorable)
-      assert.ok(true, "Positive rounding verified");
-    });
-
-    it("Ceils negative values", () => {
-      // conservative_round(-5.3) should return -5
-      // This rounds against the trader (less favorable)
-      assert.ok(true, "Negative rounding verified");
-    });
-
-    it("Handles zero correctly", () => {
-      // conservative_round(0.0) should return 0
-      assert.ok(true, "Zero handling verified");
-    });
+  it("place_limit_order updates best bid/ask", async () => {
+    const slug = padBytes("BTC_DEC31_2025", 32);
+    const [market] = PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), wallet.publicKey.toBuffer(), Buffer.from(slug)],
+      program.programId
+    );
+    const [orderbook] = PublicKey.findProgramAddressSync([Buffer.from("orderbook"), market.toBuffer()], program.programId);
+    await program.methods
+      .placeLimitOrder(0, new BN(50500), new BN(1), new BN(0))
+      .accounts({ market, orderBook: orderbook, owner: wallet.publicKey })
+      .rpc();
+    let ob = await program.account.orderBook.fetch(orderbook);
+    assert.isAbove(ob.bestBid, 0.0);
+    await program.methods
+      .placeLimitOrder(1, new BN(51500), new BN(1), new BN(0))
+      .accounts({ market, orderBook: orderbook, owner: wallet.publicKey })
+      .rpc();
+    ob = await program.account.orderBook.fetch(orderbook);
+    assert.isAbove(ob.bestAsk, 0.0);
   });
 
-  describe("Integration with Market Instructions", () => {
-    it("Uses math functions in collateral calculations", () => {
-      // When we implement full collateral math, test that:
-      // 1. L1 distance is used for collateral requirements
-      // 2. Conservative rounding is applied to amounts
-      // 3. Gaussian PDF is used for distribution pricing
-      assert.ok(true, "Math integration verified via market tests");
-    });
-
-    it("Applies conservative rounding to fees", () => {
-      // Fee calculations should use conservative_round
-      // to ensure protocol never undercharges
-      assert.ok(true, "Fee rounding verified");
-    });
-  });
-});
-
-/**
- * Property-based tests for math functions
- * These test mathematical properties that should always hold
- */
-describe("Math Property Tests", () => {
-  describe("Gaussian PDF Properties", () => {
-    it("Integrates to approximately 1", () => {
-      // ∫ PDF(x, mu, sigma) dx from -∞ to +∞ ≈ 1
-      // Test with discretized integral over [-5σ, +5σ]
-      assert.ok(true, "Normalization property holds");
-    });
-
-    it("Is always non-negative", () => {
-      // PDF(x, mu, sigma) >= 0 for all x
-      assert.ok(true, "Non-negativity holds");
-    });
-
-    it("Decreases as |x - mu| increases", () => {
-      // For fixed mu, sigma: PDF decreases moving away from mu
-      assert.ok(true, "Unimodality holds");
-    });
+  it("execute_market_order routes", async () => {
+    const slug = padBytes("BTC_DEC31_2025", 32);
+    const [market] = PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), wallet.publicKey.toBuffer(), Buffer.from(slug)],
+      program.programId
+    );
+    const [orderbook] = PublicKey.findProgramAddressSync([Buffer.from("orderbook"), market.toBuffer()], program.programId);
+    const [pool] = PublicKey.findProgramAddressSync([Buffer.from("pool"), market.toBuffer()], program.programId);
+    await program.methods
+      .executeMarketOrder(0, new BN(2))
+      .accounts({ market, orderBook: orderbook, liquidityPool: pool, taker: wallet.publicKey })
+      .rpc();
   });
 
-  describe("Distance Metrics Properties", () => {
-    it("L1 distance is non-negative", () => {
-      // L1(f, g) >= 0 for all f, g
-      assert.ok(true, "Non-negativity holds");
-    });
+  it("init_pmamm and trade buy/sell adjusts pool", async () => {
+    const slug = padBytes("BTC_DEC31_2025", 32);
+    const [market] = PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), wallet.publicKey.toBuffer(), Buffer.from(slug)],
+      program.programId
+    );
+    const [pmamm] = PublicKey.findProgramAddressSync([Buffer.from("pmamm"), market.toBuffer()], program.programId);
+    // Initialize if not exists
+    let needInit = false;
+    try { await program.account.pmAmmPool.fetch(pmamm); } catch { needInit = true; }
+    if (needInit) {
+      await program.methods
+        .initPmamm(new BN(100_000), true, 50, new BN(Math.floor(Date.now() / 1000) + 3600))
+        .accounts({ market, pmammPool: pmamm, authority: wallet.publicKey, systemProgram: SystemProgram.programId })
+        .rpc();
+    }
+    const before = await program.account.pmAmmPool.fetch(pmamm);
+    await program.methods
+      .tradePmamm(0, new BN(10))
+      .accounts({ market, pmammPool: pmamm, taker: wallet.publicKey })
+      .rpc();
+    let after = await program.account.pmAmmPool.fetch(pmamm);
+    assert.isAtMost(after.x.toNumber ? after.x.toNumber() : after.x, (before.x.toNumber ? before.x.toNumber() : before.x));
+    assert.isAtLeast(after.y.toNumber ? after.y.toNumber() : after.y, (before.y.toNumber ? before.y.toNumber() : before.y));
 
-    it("L1 distance is symmetric", () => {
-      // L1(f, g) = L1(g, f)
-      assert.ok(true, "Symmetry holds");
-    });
-
-    it("L1 distance is zero iff functions are equal", () => {
-      // L1(f, f) = 0
-      assert.ok(true, "Identity of indiscernibles holds");
-    });
-
-    it("L2 squared is non-negative", () => {
-      // L2^2(f, g) >= 0 for all f, g
-      assert.ok(true, "Non-negativity holds");
-    });
+    await program.methods
+      .tradePmamm(1, new BN(7))
+      .accounts({ market, pmammPool: pmamm, taker: wallet.publicKey })
+      .rpc();
+    after = await program.account.pmAmmPool.fetch(pmamm);
+    assert.isAtLeast(after.x.toNumber ? after.x.toNumber() : after.x, 0);
   });
 
-  describe("Rounding Properties", () => {
-    it("Conservative rounding is idempotent on integers", () => {
-      // conservative_round(n) = n for integer n
-      assert.ok(true, "Idempotence on integers holds");
-    });
-
-    it("Conservative rounding is monotonic", () => {
-      // If a <= b, then conservative_round(a) <= conservative_round(b)
-      assert.ok(true, "Monotonicity holds");
-    });
+  it("trade_pmamm rejects after expiry", async () => {
+    const slug = padBytes("EXPIRED_MKT", 32);
+    const unit = padBytes("USD", 12);
+    const oracle = padBytes("manual", 64);
+    const params = {
+      slug: [...slug] as any,
+      outcomeMin: 0.0,
+      outcomeMax: 1.0,
+      unit: [...unit] as any,
+      distType: 0,
+      mu: 0.0,
+      sigma: 1.0,
+      sigmaMin: 0.1,
+      step: 0.1,
+      resolutionTime: new BN(Math.floor(Date.now() / 1000) + 300),
+      oracleConfig: [...oracle] as any,
+      feeBpsPlatform: 0,
+      feeBpsCreator: 0,
+    };
+    const [market] = PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), wallet.publicKey.toBuffer(), Buffer.from(slug)],
+      program.programId
+    );
+    await program.methods
+      .createMarket(params as any)
+      .accounts({ market, authority: wallet.publicKey, systemProgram: SystemProgram.programId })
+      .rpc();
+    const [pmamm] = PublicKey.findProgramAddressSync([Buffer.from("pmamm"), market.toBuffer()], program.programId);
+    await program.methods
+      .initPmamm(new BN(10_000), true, 50, new BN(Math.floor(Date.now() / 1000) - 5))
+      .accounts({ market, pmammPool: pmamm, authority: wallet.publicKey, systemProgram: SystemProgram.programId })
+      .rpc();
+    let failed = false;
+    try {
+      await program.methods
+        .tradePmamm(0, new BN(1))
+        .accounts({ market, pmammPool: pmamm, taker: wallet.publicKey })
+        .rpc();
+    } catch {
+      failed = true;
+    }
+    assert.isTrue(failed);
   });
 });

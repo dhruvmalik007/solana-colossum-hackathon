@@ -638,7 +638,7 @@ pub struct PmAmmPool {
     pub bump: u8,
 }
 
-impl PmAmmPool { pub const SIZE: usize = 32 + 8 + 8 + 8 + 1 + 2 + 8 + 1; }
+impl PmAmmPool { pub const SIZE: usize = 68; }
 
 #[account]
 pub struct UserProfile {
