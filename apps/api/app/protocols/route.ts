@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
+import type { DefiLlamaProtocol, ProtocolTrimmed } from "../types-file";
+import { toProtocolTrimmed } from "../types-file";
+import { DEFILLAMA_PROTOCOLS_URL } from "../../../web/lib/constants";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const res = await fetch("https://api.llama.fi/protocols", { cache: "no-store" });
+    const res = await fetch(DEFILLAMA_PROTOCOLS_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`defillama ${res.status}`);
-    const data = (await res.json()) as any[];
-    const trimmed = data
+    const data: DefiLlamaProtocol[] = await res.json();
+    const trimmed: ProtocolTrimmed[] = data
       .filter((p) => Array.isArray(p?.chains) && p.chains.includes("Solana") && p.category !== "CEX")
-      .map((p) => ({ slug: p.slug, name: p.name, category: p.category, chains: p.chains, tvl: Number(p.tvl ?? 0), change_1d: typeof p.change_1d === 'number' ? p.change_1d : undefined, logo: typeof p.logo === 'string' ? p.logo : undefined }))
+      .map((p) => toProtocolTrimmed(p))
       .sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
     const out = NextResponse.json(trimmed);
     out.headers.set("Access-Control-Allow-Origin", process.env.WEB_ORIGIN || "*");

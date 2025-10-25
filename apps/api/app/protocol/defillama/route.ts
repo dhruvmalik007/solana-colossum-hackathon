@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     const pathParam = url.searchParams.get("path") || "";
     if (!pathParam) return NextResponse.json({ error: "path not allowed" }, { status: 400 });
     const normalized = pathParam.split("?")[0];
-    if (!ALLOWLIST.has(normalized)) return NextResponse.json({ error: "path not allowed" }, { status: 400 });
+    if (!ALLOWLIST.has(normalized!)) return NextResponse.json({ error: "path not allowed" }, { status: 400 });
     const p = pathParam.startsWith("/") ? pathParam : `/${pathParam}`;
     const target = `https://api.llama.fi${p}`;
     const r = await fetch(target, { cache: "no-store" });

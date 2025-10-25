@@ -1,7 +1,18 @@
 import { NextRequest } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 
-function decodePmAmmPool(data: Buffer) {
+type PmAmmPool = {
+  market: PublicKey;
+  x: number;
+  y: number;
+  l0: number;
+  dynamic_on: number;
+  fee_bps: number;
+  expiry_ts: number;
+  bump: number;
+};
+
+function decodePmAmmPool(data: Buffer): PmAmmPool {
   if (data.length < 8 + 32 + 8 + 8 + 8 + 1 + 2 + 8 + 1) throw new Error("account data too short");
   let o = 8; // skip discriminator
   const market = new PublicKey(data.subarray(o, o + 32)); o += 32;
@@ -15,7 +26,7 @@ function decodePmAmmPool(data: Buffer) {
   return { market, x, y, l0, dynamic_on, fee_bps, expiry_ts, bump };
 }
 
-function effectiveLiquidity(l0: number, dynamic_on: number, expiry_ts: number, now_ts: number) {
+function effectiveLiquidity(l0: number, dynamic_on: number, expiry_ts: number, now_ts: number): number {
   if (dynamic_on === 0) return l0;
   const dt = Math.max(expiry_ts - now_ts, 1);
   let L = l0 * Math.sqrt(dt);
