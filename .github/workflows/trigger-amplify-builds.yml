@@ -127,7 +127,7 @@ jobs:
           echo "$JOB_JSON" | jq '{summary: .job.summary}' >> $GITHUB_STEP_SUMMARY
           COUNT=$(echo "$JOB_JSON" | jq '.job.steps | length')
           for i in $(seq 0 $((COUNT-1))); do
-            NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].name // .job.steps[$i].phase // (\"step_${i}\")")
+            NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].stepName // .job.steps[$i].name // .job.steps[$i].phase // (\"step_${i}\")")
             STATUS=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].status")
             LOG_URL=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].logUrl // .job.steps[$i].logsUrl // empty")
             SAFE_NAME=$(echo "$NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
@@ -296,7 +296,7 @@ jobs:
               echo "$JOB_JSON" > amplify-logs/job-${JOB_ID_INPUT}.json
               COUNT=$(echo "$JOB_JSON" | jq '.job.steps | length')
               for i in $(seq 0 $((COUNT-1))); do
-                NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].name // .job.steps[$i].phase // (\"step_${i}\")")
+                NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].stepName // .job.steps[$i].name // .job.steps[$i].phase // (\"step_${i}\")")
                 STATUS_STEP=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].status")
                 LOG_URL=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].logUrl // .job.steps[$i].logsUrl // empty")
                 SAFE_NAME=$(echo "$NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
@@ -318,6 +318,14 @@ jobs:
           echo "Build wait timed out after ${MAX_WAIT}s"
           echo "build_status=TIMEOUT" >> $GITHUB_OUTPUT
           exit 1
+
+      - name: Upload Amplify Logs Artifact (post-wait)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amplify-logs-${{ github.ref_name }}-${{ github.run_id }}
+          path: amplify-logs
+          if-no-files-found: warn
 
       - name: Get Deployment URL
         id: deployment_url

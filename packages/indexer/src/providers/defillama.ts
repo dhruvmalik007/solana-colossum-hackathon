@@ -1,3 +1,5 @@
+const DEFILLAMA_PROTOCOLS_URL = "https://api.llama.fi/protocols";
+const DEFILLAMA_PROTOCOL_URL = (slug: string) => `https://api.llama.fi/protocol/${slug}`;
 export type ProtocolSlim = {
   slug: string;
   name: string;
@@ -17,7 +19,7 @@ export type ProtocolDetailSlim = {
 };
 
 export async function listSolanaProtocols(): Promise<ProtocolSlim[]> {
-  const res = await fetch("https://api.llama.fi/protocols");
+  const res = await fetch(DEFILLAMA_PROTOCOLS_URL);
   if (!res.ok) return [];
   const data = (await res.json()) as any[];
   const out: ProtocolSlim[] = data
@@ -36,7 +38,7 @@ export async function listSolanaProtocols(): Promise<ProtocolSlim[]> {
 }
 
 export async function getProtocolDetailSlim(slug: string): Promise<ProtocolDetailSlim | null> {
-  const res = await fetch(`https://api.llama.fi/protocol/${slug}`);
+  const res = await fetch(DEFILLAMA_PROTOCOL_URL(slug));
   if (!res.ok) return null;
   const p: any = await res.json();
   const sol: { date: number; totalLiquidityUSD: number }[] = Array.isArray(p?.chainTvls?.Solana?.tvl)
