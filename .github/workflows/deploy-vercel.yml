@@ -64,13 +64,12 @@ jobs:
 
       - name: Deploy (apps/web)
         id: deploy
-        
-        uses: amondnet/vercel-action@v41.1.4
+        uses: amondnet/vercel-action@v25.2.0
         with:
-          working-directory: apps/web
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: apps/web
           vercel-args: ${{ steps.env.outputs.isProd == 'true' && '--prod' || '' }}
 
       - name: Output deployment URL
