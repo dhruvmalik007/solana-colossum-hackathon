@@ -55,6 +55,51 @@ Parameters:
     Default: http://localhost:3000
     Description: Web app origin for CORS and downstream services
 
+  # Draft parameters for mem0 self-hosting (non-destructive; no resources created yet)
+  Mem0Enabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Enable mem0 self-hosting resources. When false, no mem0 resources are created.
+
+  Mem0ServiceImage:
+    Type: String
+    Default: mem0ai/mem0:latest
+    Description: Docker image for mem0 service (informational, not used yet)
+
+  Mem0VectorDB:
+    Type: String
+    Default: weaviate
+    AllowedValues:
+      - weaviate
+      - pgvector
+      - milvus
+      - opensearch
+      - pinecone
+      - qdrant
+    Description: Vector DB provider for mem0 (informational)
+
+  Mem0GraphStore:
+    Type: String
+    Default: neo4j
+    AllowedValues:
+      - neo4j
+      - neptune
+      - kuzu
+      - none
+    Description: Graph store for mem0 graph memory (informational)
+
+  Mem0RerankerProvider:
+    Type: String
+    Default: sentence-transformers
+    AllowedValues:
+      - sentence-transformers
+      - cohere
+      - none
+    Description: Reranker provider for mem0 search (informational)
+
 Resources:
   # ============================================
   # DynamoDB Table for API Response Caching
@@ -75,6 +120,65 @@ Resources:
         Enabled: true
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================
+  # Optional DynamoDB tables for memory integration (only when Mem0EnabledCond)
+  # ============================================
+  DiscussionThreadsTable:
+    Condition: Mem0EnabledCond
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'discussion-threads-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: threadId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: threadId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  DiscussionMessagesTable:
+    Condition: Mem0EnabledCond
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'discussion-messages-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: threadId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  MemoryPointersTable:
+    Condition: Mem0EnabledCond
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'memory-pointers-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
       SSESpecification:
         SSEEnabled: true
       Tags:
@@ -373,6 +477,12 @@ Resources:
           Value: !Ref TradesTable
         - Name: DYNAMODB_TABLE_POSITIONS
           Value: !Ref PositionsTable
+        - Name: DYNAMODB_TABLE_DISCUSSION_THREADS
+          Value: !If [ Mem0EnabledCond, !Ref DiscussionThreadsTable, "discussion-threads" ]
+        - Name: DYNAMODB_TABLE_DISCUSSION_MESSAGES
+          Value: !If [ Mem0EnabledCond, !Ref DiscussionMessagesTable, "discussion-messages" ]
+        - Name: DYNAMODB_TABLE_MEMORY_POINTERS
+          Value: !If [ Mem0EnabledCond, !Ref MemoryPointersTable, "memory-pointers" ]
       CustomRules:
         - Source: /<*>
           Target: /index.html
@@ -456,6 +566,7 @@ Resources:
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, prod]
+  Mem0EnabledCond: !Equals [!Ref Mem0Enabled, "true"]
 
 Outputs:
   AmplifyAppId:
