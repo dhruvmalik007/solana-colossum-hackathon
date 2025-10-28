@@ -49,7 +49,7 @@ jobs:
 
 
       - name: Install dependencies (workspace)
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile=false --legacy-peer-deps
 
       - name: Select environment
         id: env
@@ -70,7 +70,7 @@ jobs:
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           working-directory: apps/web
-          vercel-args: ${{ steps.env.outputs.isProd == 'true' && '--prod' || '' }}
+          vercel-args: --build-env NPM_LEGACY_PEER_DEPS=true ${{ steps.env.outputs.isProd == 'true' && '--prod' || '' }}
 
       - name: Output deployment URL
         run: |
