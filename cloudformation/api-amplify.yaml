@@ -36,7 +36,7 @@ Resources:
       AccessToken: !Ref GitHubToken
       Description: Next.js API (apps/api) hosted on Amplify
       BuildSpec: |
-        version: 1
+        version: 1.0
         frontend:
           phases:
             preBuild:
@@ -50,7 +50,7 @@ Resources:
                 - echo "Building API application (apps/api)..."
                 - pnpm --filter api build
           artifacts:
-            baseDirectory: apps/api/.next
+            baseDirectory: .next
             files:
               - '**/*'
           cache:
