@@ -14,12 +14,12 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@copilotkit/react-core": "^1.0.0",
-    "@copilotkit/react-ui": "^1.0.0",
-    "@copilotkit/runtime": "^1.0.0",
     "@ai-sdk/openai": "^2.0.44",
     "@aws-sdk/client-dynamodb": "^3.700.0",
     "@aws-sdk/util-dynamodb": "^3.908.0",
+    "@copilotkit/react-core": "^1.0.0",
+    "@copilotkit/react-ui": "^1.0.0",
+    "@copilotkit/runtime": "^1.0.0",
     "@privy-io/react-auth": "^3.3.0",
     "@repo/database": "workspace:*",
     "@repo/ui": "workspace:*",
@@ -51,10 +51,10 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "autoprefixer": "^10.4.21",
-    "eslint": "^9.34.0",
-    "postcss": "^8.5.6",
     "concurrently": "^9.0.0",
+    "eslint": "^9.34.0",
     "local-ssl-proxy": "^1.3.0",
+    "postcss": "^8.5.6",
     "typescript": "5.9.2"
   },
   "engines": {
