@@ -62,18 +62,19 @@ jobs:
             echo "isProd=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Deploy (apps/web)
+      - name: Deploy to Vercel (apps/web)
         id: deploy
-        uses: amondnet/vercel-action@v25.2.0
-        env:
-          NEXT_PUBLIC_PRIVY_APP_ID: ${{ secrets.NEXT_PUBLIC_PRIVY_APP_ID }}
+        uses: BetaHuhn/deploy-to-vercel-action@v1
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: apps/web
-          vercel-args: --build-env NPM_LEGACY_PEER_DEPS=true ${{ steps.env.outputs.isProd == 'true' && '--prod' || '' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          WORKING_DIRECTORY: apps/web
+          PRODUCTION: ${{ github.ref == 'refs/heads/main' }}
+          BUILD_ENV: |
+            NEXT_PUBLIC_PRIVY_APP_ID=${{ secrets.NEXT_PUBLIC_PRIVY_APP_ID }}
 
       - name: Output deployment URL
         run: |
-          echo "Preview URL: ${{ steps.deploy.outputs.preview-url }}"
+          echo "Preview URL: ${{ steps.deploy.outputs.url || steps.deploy.outputs.preview_url || steps.deploy.outputs.preview-url }}"
