@@ -1,0 +1,100 @@
+name: Deploy API (AWS CF) and Web (Vercel)
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: Deploy apps/api via CloudFormation
+    runs-on: ubuntu-latest
+    outputs:
+      api_url: ${{ steps.get-output.outputs.api_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "env=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy CloudFormation stack (API Amplify Hosting)
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: solana-api-${{ steps.env.outputs.env }}
+          template: cloudformation/api-amplify.yaml
+          no-fail-on-empty-changeset: '1'
+          capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+          parameter-overrides: |
+            Environment=${{ steps.env.outputs.env }},
+            GitHubRepository=https://github.com/${{ github.repository }},
+            GitHubBranch=${{ github.ref_name }},
+            GitHubToken=${{ secrets.AMPLIFY_GITHUB_TOKEN }},
+            WebOrigin=https://solana-colossum-hackathon-9xz92gngv-frontier-tech-labs.vercel.app
+
+      - name: Retrieve API URL output
+        id: get-output
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name solana-api-${{ steps.env.outputs.env }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiAmplifyURL'].OutputValue" \
+            --output text)
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+
+  web:
+    name: Deploy apps/web to Vercel (uses API URL)
+    runs-on: ubuntu-latest
+    needs: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'pnpm'
+
+      - name: Deploy to Vercel (apps/web)
+        id: deploy
+        uses: BetaHuhn/deploy-to-vercel-action@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          WORKING_DIRECTORY: apps/web
+          PRODUCTION: ${{ github.ref == 'refs/heads/main' }}
+          BUILD_ENV: |
+            NEXT_PUBLIC_PRIVY_APP_ID=${{ secrets.NEXT_PUBLIC_PRIVY_APP_ID }}
+            NEXT_PUBLIC_SOLANA_MAINNET_RPC=${{ secrets.NEXT_PUBLIC_SOLANA_MAINNET_RPC }}
+            NEXT_PUBLIC_SOLANA_DEVNET_RPC=${{ secrets.NEXT_PUBLIC_SOLANA_DEVNET_RPC }}
+            NEXT_PUBLIC_SOLANA_MAINNET_WS=${{ secrets.NEXT_PUBLIC_SOLANA_MAINNET_WS }}
+            NEXT_PUBLIC_SOLANA_DEVNET_WS=${{ secrets.NEXT_PUBLIC_SOLANA_DEVNET_WS }}
+            NEXT_PUBLIC_COPILOTKIT_PUBLIC_API_KEY=${{ secrets.NEXT_PUBLIC_COPILOTKIT_PUBLIC_API_KEY }}
+            NEXT_PUBLIC_API_BASE_URL=${{ needs.api.outputs.api_url }}
+
+      - name: Output deployment URL
+        run: |
+          echo "Preview URL: ${{ steps.deploy.outputs.url || steps.deploy.outputs.preview_url || steps.deploy.outputs.preview-url }}"
