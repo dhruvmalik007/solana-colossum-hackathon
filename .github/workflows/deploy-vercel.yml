@@ -63,33 +63,15 @@ jobs:
           fi
 
       - name: Deploy (apps/web)
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         id: deploy
-        run: |
-          if [ "${{ steps.env.outputs.isProd }}" = "true" ]; then
-            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --prod --token=${VERCEL_TOKEN})
-          else
-            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --token=${VERCEL_TOKEN})
-          fi
-          echo "$DEPLOY_OUTPUT"
-          DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[^ >]+' | head -1)
-          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
-          DEPLOYMENT_ID=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://vercel.com/[^ >]+' | head -1 | sed -E 's/.*\/([^\/]+)$/'"'"'\1'"'"'/')
-          echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+        uses: amondnet/vercel-action@v41.1.4
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./apps/web
+          vercel-args: ${{ steps.env.outputs.isProd == 'true' && '--prod' || '' }}
 
-      - name: Check deployment status
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Output deployment URL
         run: |
-          if [ -n "${{ steps.deploy.outputs.deployment_id }}" ]; then
-            echo "Checking deployment status for ID: ${{ steps.deploy.outputs.deployment_id }}"
-            curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-              "https://api.vercel.com/v6/deployments/${{ steps.deploy.outputs.deployment_id }}" \
-              | jq -r '.state'
-          else
-            echo "No deployment ID found"
-          fi
+          echo "Preview URL: ${{ steps.deploy.outputs.preview-url }}"
