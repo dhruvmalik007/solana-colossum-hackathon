@@ -1,0 +1,28 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - main   # Production deploys
+      - dev    # Staging/preview deploys
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Deploy via official Vercel Action. It triggers a remote build on Vercel.
+      # Required repository secrets:
+      #   - VERCEL_TOKEN: Vercel Personal Access Token
+      #   - VERCEL_ORG_ID: Your Vercel Org ID
+      #   - VERCEL_PROJECT_ID: The Project ID for apps/web (monorepo project)
+      - name: Deploy to Vercel
+        uses: vercel/actions@v2
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          # Set production for main; preview for dev
+          prod: ${{ github.ref == 'refs/heads/main' }}
