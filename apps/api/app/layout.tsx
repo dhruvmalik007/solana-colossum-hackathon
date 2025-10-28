@@ -1,4 +1,3 @@
-import { AnalyticsProvider } from "@repo/analytics/provider";
 import type { ReactNode } from "react";
 
 type RootLayoutProperties = {
@@ -8,7 +7,7 @@ type RootLayoutProperties = {
 const RootLayout = ({ children }: RootLayoutProperties) => (
   <html lang="en">
     <body>
-      <AnalyticsProvider>{children}</AnalyticsProvider>
+      {children}
     </body>
   </html>
 );

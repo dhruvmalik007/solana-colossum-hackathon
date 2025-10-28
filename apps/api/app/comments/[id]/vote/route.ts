@@ -10,9 +10,9 @@ function withCors(res: NextResponse) {
 
 export async function OPTIONS() { return withCors(new NextResponse(null, { status: 204 })); }
 
-export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = ctx?.params?.id;
+    const { id } = await params;
     if (!id) return withCors(NextResponse.json({ error: "missing id" }, { status: 400 }));
     const body = await req.json().catch(() => ({} as any));
     const dir = Number(body?.dir);
@@ -24,3 +24,4 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
     return withCors(NextResponse.json({ error: "server error" }, { status: 500 }));
   }
 }
+

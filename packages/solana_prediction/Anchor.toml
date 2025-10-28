@@ -6,13 +6,13 @@ seeds = true
 skip-lint = false
 
 [programs.localnet]
-solana_prediction = ""
+solana_prediction = "8ADZwnjeRCQ9Zkeafqb7XhmtEWC1XtVEajATzrtTr1nu"
 
 [programs.devnet]
-solana_prediction = ""
+solana_prediction = "8ADZwnjeRCQ9Zkeafqb7XhmtEWC1XtVEajATzrtTr1nu"
 
 [programs.mainnet]
-solana_prediction = ""
+solana_prediction = "8ADZwnjeRCQ9Zkeafqb7XhmtEWC1XtVEajATzrtTr1nu"
 
 [registry]
 url = "https://anchor.projectserum.com"

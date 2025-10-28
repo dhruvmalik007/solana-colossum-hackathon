@@ -12,6 +12,10 @@ const EnvSchema = z.object({
   DYNAMODB_TABLE_EMBEDS: z.string().default("embeds"),
   DYNAMODB_TABLE_PROTOCOL_CACHE: z.string().default("protocol-cache"),
   DYNAMODB_TABLE_JOBS: z.string().default("jobs"),
+  // Memory integration (additive, optional tables)
+  DYNAMODB_TABLE_DISCUSSION_THREADS: z.string().default("discussion-threads"),
+  DYNAMODB_TABLE_DISCUSSION_MESSAGES: z.string().default("discussion-messages"),
+  DYNAMODB_TABLE_MEMORY_POINTERS: z.string().default("memory-pointers"),
 });
 
 export const env = EnvSchema.parse(process.env);

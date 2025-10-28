@@ -10,10 +10,7 @@ name = "solana_prediction"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-solana-keygen = "3.0.6"
-solana-program = "1.18.26"
-zeroize = "1.8.2"
-anchor-lang = { version = "0.32.1", features = ["init-if-needed", "idl-build"] }
+anchor-lang = { version = "0.31.1", features = ["init-if-needed", "idl-build"] }
 
 [features]
 idk-build = []

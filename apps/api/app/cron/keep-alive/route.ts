@@ -1,17 +1,17 @@
-import { database } from "@repo/database";
+import { ddb } from "@repo/database";
 
-export const GET = async () => {
-  const newPage = await database.page.create({
-    data: {
-      name: "cron-temp",
-    },
-  });
+// export const GET = async () => {
+//   const newPage = await ddb.put({
+//     data: {
+//       name: "cron-temp",
+//     },
+//   });
 
-  await database.page.delete({
-    where: {
-      id: newPage.id,
-    },
-  });
+//   await ddb.    delete({
+//     where: {
+//       id: newPage.id,
+//     },
+//   });
 
-  return new Response("OK", { status: 200 });
-};
+//   return new Response("OK", { status: 200 });
+// };

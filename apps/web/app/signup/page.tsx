@@ -20,7 +20,7 @@ export default function SignupPage(): any {
   const [err, setErr] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (authenticated) router.replace("/");
+    if (authenticated) router.replace("/creator-onboarding");
   }, [authenticated, router]);
 
   async function doLogin(method: "email" | "google" | "wallet") {

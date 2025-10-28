@@ -14,8 +14,8 @@ async function buildSnapshot(slug: string) {
   return { bids, asks, recentTrades };
 }
 
-export async function GET(_req: Request, { params }: { params: { slug: string } }) {
-  const slug = params.slug;
+export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();

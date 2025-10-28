@@ -1,11 +1,8 @@
-const nextConfig = {
-  reactStrictMode: true,
-  experimental: {
-    serverExternalPackages: [
-      "import-in-the-middle",
-      "require-in-the-middle",
-    ],
-  },
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  reactStrictMode: false,
+
 };
 
 export default nextConfig;

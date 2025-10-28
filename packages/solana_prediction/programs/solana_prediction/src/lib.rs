@@ -3,7 +3,7 @@ pub mod math;
 use math::effective_liquidity;
 
 // TODO: Replace with your deployed program ID later
-declare_id!("HaDRStkEsHfomv9YPuUiJWsAHsF36NN8n3t6uUmuDuEo");
+declare_id!("8ADZwnjeRCQ9Zkeafqb7XhmtEWC1XtVEajATzrtTr1nu");
 
 #[program]
 pub mod solana_prediction {
@@ -356,7 +356,14 @@ pub mod solana_prediction {
         pool.expiry_ts = expiry_ts;
         pool.bump = ctx.bumps.pmamm_pool;
 
-        emit!(PmAmmInitialized { market: pool.market, l0, dynamic_on, fee_bps, expiry_ts, ts: Clock::get()?.unix_timestamp });
+        emit!(PmAmmInitialized { 
+            market: pool.market, 
+            l0, 
+            dynamic_on: pool.dynamic_on, 
+            fee_bps, 
+            expiry_ts, 
+            ts: Clock::get()?.unix_timestamp 
+        });
         msg!(
             "IDX:PmAmmInitialized|market={}|l0={}|dynamic_on={}|fee_bps={}|expiry_ts={}|ts={}",
             pool.market,
@@ -387,7 +394,7 @@ pub mod solana_prediction {
 
         let s = size as f64;
         require!(now < pool.expiry_ts, ErrorCode::MarketNotActive);
-        let mut delta_y: f64;
+        let delta_y: f64;
         if side == 0 {
             // Buy X: remove X from pool, pay Y to pool
             let max_buy = (vx - 1.0).max(0.0); // leave 1 unit to avoid div-by-zero
@@ -395,8 +402,8 @@ pub mod solana_prediction {
             let new_vx = (vx - buy).max(1.0);
             let new_vy = k / new_vx;
             delta_y = (new_vy - vy).max(0.0);
-            vx = new_vx;
-            vy = new_vy;
+            // vx = new_vx; // Not used after
+            // vy = new_vy; // Not used after
             // Fees accrue to pool; buyer pays delta_y + fee
             let fee = (delta_y * (pool.fee_bps as f64) / 10_000.0).max(0.0);
             let add_y = (delta_y + fee).max(0.0) as u64;
@@ -426,8 +433,8 @@ pub mod solana_prediction {
             let new_vx = vx + s;
             let new_vy = (k / new_vx).max(0.0);
             delta_y = (vy - new_vy).max(0.0);
-            vx = new_vx;
-            vy = new_vy;
+            // vx = new_vx; // Not used after
+            // vy = new_vy; // Not used after
             // Seller receives delta_y - fee; pool keeps fee
             let fee = (delta_y * (pool.fee_bps as f64) / 10_000.0).max(0.0);
             let payout = (delta_y - fee).max(0.0) as u64;

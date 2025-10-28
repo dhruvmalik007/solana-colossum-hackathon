@@ -89,9 +89,11 @@ export default function CreatorOnboardingPage() {
           userId: user?.id,
           walletAddress: primaryWallet?.address,
           role,
-          displayName,
-          bio,
-          website,
+          profileData: {
+            displayName,
+            bio,
+            website,
+          },
           portfolioStats: portfolioData ? {
             totalMarketsCreated: 0,
             totalVolume: portfolioData.tokenHoldings.reduce((sum, t) => sum + t.value, 0),

@@ -8,9 +8,9 @@ function withCors(res: NextResponse) {
   return res;
 }
 
-export async function GET(_req: Request, ctx: { params: { slug: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   try {
-    const slug = ctx?.params?.slug;
+    const { slug } = await params;
     if (!slug) return withCors(NextResponse.json({ error: "missing slug" }, { status: 400 }));
     const m = await getMarketBySlug(slug);
     if (!m) return withCors(NextResponse.json({ error: "not found" }, { status: 404 }));

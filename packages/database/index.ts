@@ -308,3 +308,80 @@ export async function listEmbedsByMarket(marketId: string) {
 }
 
 export * from "./schemas";
+
+export type DiscussionThread = {
+  threadId: string;
+  marketId: string;
+  createdBy: string;
+  status: "open" | "closed";
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type DiscussionMessage = {
+  id: string;
+  threadId: string;
+  userId: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  attachments?: { type: string; url?: string; dataUrl?: string }[];
+  createdAt: string;
+};
+
+export type MemoryPointer = {
+  id: string;
+  ownerType: "thread" | "message" | "market" | "user";
+  ownerId: string;
+  provider: "mem0";
+  vectorId?: string;
+  graphNodeId?: string;
+  tags?: string[];
+  metadata?: Record<string, any>;
+  createdAt: string;
+};
+
+export async function putDiscussionThread(t: DiscussionThread) {
+  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_THREADS, Item: t }));
+}
+
+export async function getDiscussionThread(threadId: string) {
+  const out = await ddb.send(new GetCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_THREADS, Key: { threadId } }));
+  return (out.Item as DiscussionThread) ?? null;
+}
+
+export async function listDiscussionThreadsByMarket(marketId: string) {
+  const out = await ddb.send(
+    new ScanCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_THREADS, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
+  );
+  const items = (out.Items as DiscussionThread[]) ?? [];
+  items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return items;
+}
+
+export async function putDiscussionMessage(m: DiscussionMessage) {
+  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_MESSAGES, Item: m }));
+}
+
+export async function listDiscussionMessagesByThread(threadId: string) {
+  const out = await ddb.send(
+    new ScanCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_MESSAGES, FilterExpression: "threadId = :t", ExpressionAttributeValues: { ":t": threadId } })
+  );
+  const items = (out.Items as DiscussionMessage[]) ?? [];
+  items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return items;
+}
+
+export async function putMemoryPointer(p: MemoryPointer) {
+  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_MEMORY_POINTERS, Item: p }));
+}
+
+export async function listMemoryPointers(ownerType: MemoryPointer["ownerType"], ownerId: string) {
+  const out = await ddb.send(
+    new ScanCommand({
+      TableName: env.DYNAMODB_TABLE_MEMORY_POINTERS,
+      FilterExpression: "ownerType = :ot AND ownerId = :oid",
+      ExpressionAttributeValues: { ":ot": ownerType, ":oid": ownerId },
+    })
+  );
+  return (out.Items as MemoryPointer[]) ?? [];
+}
