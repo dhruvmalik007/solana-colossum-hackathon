@@ -69,8 +69,8 @@ jobs:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-project-name: solana-colossum-hackathon-web
-          vercel-args: --cwd apps/web ${{ steps.env.outputs.isProd == 'true' && '--prod' || '' }}
+          working-directory: apps/web
+          vercel-args: ${{ steps.env.outputs.isProd == 'true' && '--prod' || '' }}
 
       - name: Output deployment URL
         run: |
