@@ -71,9 +71,9 @@ jobs:
         id: deploy
         run: |
           if [ "${{ steps.env.outputs.isProd }}" = "true" ]; then
-            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --prod --token=${VERCEL_TOKEN} --cwd .)
+            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --prod --token=${VERCEL_TOKEN})
           else
-            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --token=${VERCEL_TOKEN} --cwd .)
+            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --token=${VERCEL_TOKEN})
           fi
           echo "$DEPLOY_OUTPUT"
           DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[^ >]+' | head -1)
