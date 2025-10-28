@@ -49,7 +49,7 @@ jobs:
 
 
       - name: Install dependencies (workspace)
-        run: pnpm install --frozen-lockfile=false --legacy-peer-deps
+        run: pnpm install --no-strict-peer-dependencies --frozen-lockfile=false
 
       - name: Select environment
         id: env
