@@ -62,31 +62,7 @@ jobs:
             echo "isProd=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Vercel pull (apps/web)
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: |
-          pnpm dlx vercel@latest pull --yes --environment=${{ steps.env.outputs.envName }} --token=${VERCEL_TOKEN}
-
-      - name: Build (apps/web) with Node 20
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: |
-          pnpm dlx vercel@latest build --token=${VERCEL_TOKEN}
-
-      - name: Cache build artifacts
-        uses: actions/cache@v3
-        with:
-          path: apps/web/.vercel/output
-          key: ${{ runner.os }}-vercel-build-${{ github.sha }}
-
-      - name: Deploy prebuilt (apps/web)
+      - name: Deploy (apps/web)
         working-directory: apps/web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -95,9 +71,9 @@ jobs:
         id: deploy
         run: |
           if [ "${{ steps.env.outputs.isProd }}" = "true" ]; then
-            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --prebuilt --prod --token=${VERCEL_TOKEN})
+            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --prod --token=${VERCEL_TOKEN})
           else
-            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --prebuilt --token=${VERCEL_TOKEN})
+            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --token=${VERCEL_TOKEN})
           fi
           echo "$DEPLOY_OUTPUT"
           DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[^ >]+' | head -1)
