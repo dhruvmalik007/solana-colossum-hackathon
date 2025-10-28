@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev --turbopack --port 3000",
     "dev:https": "concurrently -k -n NEXT,SSL \"next dev --turbopack --port 3000\" \"local-ssl-proxy --source 3443 --target 3000 --cert .ssl/localhost.pem --key .ssl/localhost-key.pem\"",
+    "dev:https:setup": "bash -c 'set -e; mkdir -p .ssl; if command -v mkcert >/dev/null 2>&1; then mkcert -install && mkcert -key-file .ssl/localhost-key.pem -cert-file .ssl/localhost.pem localhost; else openssl req -x509 -nodes -days 825 -newkey rsa:2048 -keyout .ssl/localhost-key.pem -out .ssl/localhost.pem -subj \"/CN=localhost\"; echo \"[info] OpenSSL cert created. In Keychain, set apps/web/.ssl/localhost.pem to Always Trust for Safari.\"; fi'",
     "dev:https:3000": "concurrently -k -n NEXT,SSL \"next dev --turbopack --port 3001\" \"local-ssl-proxy --source 3000 --target 3001 --cert .ssl/localhost.pem --key .ssl/localhost-key.pem\"",
     "build": "next build",
     "start": "next start",
@@ -30,6 +31,7 @@
     "@wallet-standard/core": "^1.1.1",
     "@wallet-standard/react": "^1.0.1",
     "ai": "^3.3.25",
+    "critters": "^0.0.22",
     "next": "^15.5.0",
     "next-themes": "^0.4.6",
     "openai": "^4.57.0",
@@ -44,7 +46,6 @@
   "devDependencies": {
     "@repo/eslint-config": "workspace:^",
     "@repo/typescript-config": "workspace:^",
-    "@repo/api": "workspace:*",
     "@tailwindcss/postcss": "^4.1.14",
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.0",
@@ -55,5 +56,8 @@
     "concurrently": "^9.0.0",
     "local-ssl-proxy": "^1.3.0",
     "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }

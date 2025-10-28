@@ -13,16 +13,58 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Deploy via official Vercel Action. It triggers a remote build on Vercel.
-      # Required repository secrets:
-      #   - VERCEL_TOKEN: Vercel Personal Access Token
-      #   - VERCEL_ORG_ID: Your Vercel Org ID
-      #   - VERCEL_PROJECT_ID: The Project ID for apps/web (monorepo project)
-      - name: Deploy to Vercel
-        uses: vercel/actions@v2
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          # Set production for main; preview for dev
-          prod: ${{ github.ref == 'refs/heads/main' }}
+          node-version: '20.x'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+
+      - name: Install dependencies (workspace)
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Select environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "envName=production" >> $GITHUB_OUTPUT
+            echo "isProd=true" >> $GITHUB_OUTPUT
+          else
+            echo "envName=preview" >> $GITHUB_OUTPUT
+            echo "isProd=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Vercel pull (apps/web)
+        working-directory: apps/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_COLLOSSUM }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          pnpm dlx vercel@latest pull --yes --environment=${{ steps.env.outputs.envName }}
+
+      - name: Build (apps/web) with Node 20
+        working-directory: apps/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_COLLOSSUM }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          pnpm dlx vercel@latest build
+
+      - name: Deploy prebuilt (apps/web)
+        working-directory: apps/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_COLLOSSUM }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ "${{ steps.env.outputs.isProd }}" = "true" ]; then
+            pnpm dlx vercel@latest deploy --prebuilt --prod
+          else
+            pnpm dlx vercel@latest deploy --prebuilt
+          fi
