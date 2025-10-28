@@ -71,9 +71,9 @@ jobs:
         id: deploy
         run: |
           if [ "${{ steps.env.outputs.isProd }}" = "true" ]; then
-            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --prod --token=${VERCEL_TOKEN})
+            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --prod --token=${VERCEL_TOKEN} --cwd .)
           else
-            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --token=${VERCEL_TOKEN})
+            DEPLOY_OUTPUT=$(pnpm dlx vercel@latest deploy --token=${VERCEL_TOKEN} --cwd .)
           fi
           echo "$DEPLOY_OUTPUT"
           DEPLOYMENT_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https://[^ >]+' | head -1)
@@ -88,7 +88,7 @@ jobs:
           if [ -n "${{ steps.deploy.outputs.deployment_id }}" ]; then
             echo "Checking deployment status for ID: ${{ steps.deploy.outputs.deployment_id }}"
             curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-              "https://api.vercel.com/v13/deployments/${{ steps.deploy.outputs.deployment_id }}" \
+              "https://api.vercel.com/v6/deployments/${{ steps.deploy.outputs.deployment_id }}" \
               | jq -r '.state'
           else
             echo "No deployment ID found"
