@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Amplify Hosting for apps/api (Next.js API) - Monorepo aware'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name (dev, staging, prod)
+
+  GitHubRepository:
+    Type: String
+    Description: GitHub repository URL (e.g., https://github.com/<owner>/<repo>)
+
+  GitHubBranch:
+    Type: String
+    Default: dev
+    Description: Git branch to deploy
+
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Description: GitHub personal access token for Amplify to access the repository
+
+  WebOrigin:
+    Type: String
+    Default: http://localhost:3000
+    Description: Web app origin for CORS (informational)
+
+Resources:
+  ApiAmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub 'solana-prediction-api-${Environment}'
+      Repository: !Ref GitHubRepository
+      AccessToken: !Ref GitHubToken
+      Description: Next.js API (apps/api) hosted on Amplify
+      BuildSpec: |
+        version: 1
+        frontend:
+          phases:
+            preBuild:
+              commands:
+                - echo "Installing dependencies with pnpm..."
+                - corepack enable
+                - corepack prepare pnpm@9.0.0 --activate
+                - pnpm install --frozen-lockfile
+            build:
+              commands:
+                - echo "Building API application (apps/api)..."
+                - pnpm --filter api build
+          artifacts:
+            baseDirectory: apps/api/.next
+            files:
+              - '**/*'
+          cache:
+            paths:
+              - node_modules/**/*
+              - .pnpm-store/**/*
+      EnvironmentVariables:
+        - Name: AMPLIFY_MONOREPO_APP_ROOT
+          Value: apps/api
+        - Name: WEB_ORIGIN
+          Value: !Ref WebOrigin
+
+  ApiAmplifyBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt ApiAmplifyApp.AppId
+      BranchName: !Ref GitHubBranch
+      EnableAutoBuild: true
+      Stage: DEVELOPMENT
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ApiAmplifyAppId:
+    Description: Amplify App ID for API
+    Value: !GetAtt ApiAmplifyApp.AppId
+  ApiAmplifyURL:
+    Description: Branch URL for API app
+    Value: !Sub 'https://${GitHubBranch}.${ApiAmplifyApp.DefaultDomain}'

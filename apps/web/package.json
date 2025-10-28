@@ -22,6 +22,7 @@
     "@copilotkit/runtime": "^1.0.0",
     "@privy-io/react-auth": "^3.3.0",
     "@repo/database": "workspace:*",
+    "@repo/ai": "workspace:*",
     "@repo/ui": "workspace:*",
     "@solana-program/memo": "^0.8.0",
     "@solana/kit": "^4.0.0",

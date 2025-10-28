@@ -58,7 +58,7 @@ const nextConfig = {
   },
   
   // Ensure shared workspace packages are transpiled by Next
-  transpilePackages: ["@repo/ui", "@repo/database"],
+  transpilePackages: ["@repo/ui", "@repo/database", "@repo/ai", "@repo/types"],
   
   // Experimental optimizations for lower memory usage
   experimental: {
