@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { configureMemory, addMemories } from "@repo/ai";
+import { configureMemory, addMemories, MemoryManager } from "@repo/ai";
 import { putDiscussionMessage, putDiscussionThread, putMemoryPointer, type DiscussionMessage, type DiscussionThread, type MemoryPointer } from "@repo/database";
 
 function withCors(res: NextResponse) {
@@ -32,8 +32,13 @@ export async function POST(req: NextRequest) {
       projectId: process.env.MEM0_PROJECT_ID,
     });
 
+    // Configure Neptune GraphStore from env if provided (NEPTUNE_* vars)
+    MemoryManager.getInstance().configureGraphFromEnv();
+
     // Normalize to messages array for mem0
-    const messages: any[] = Array.isArray(payload) ? payload : [{ role: "user", content: JSON.stringify(payload ?? {}) }];
+    const messages: ReadonlyArray<Record<string, unknown> | string> = Array.isArray(payload)
+      ? payload
+      : [{ role: "user", content: JSON.stringify(payload ?? {}) }];
 
     // Persist discussion scaffolds (optional)
     let threadId = threadIdIn;
@@ -69,7 +74,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Index into mem0 via centralized client
-    const addRes = await addMemories(messages, { userId, agentId: "discussion-agent", runId: threadId, enableGraph: !!options?.enableGraph });
+    const addRes = await addMemories(messages, {
+      userId,
+      agentId: "discussion-agent",
+      runId: threadId,
+      enableGraph: !!options?.enableGraph,
+    });
 
     // Store pointer (best-effort)
     const pointer: MemoryPointer = {
