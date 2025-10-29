@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { API_BASE } from "@/lib/client/api";
 import type { BookLevel, Trade } from "@repo/ui/components/OrderBookTable";
 
 export type OrderBookSnapshot = {
@@ -17,7 +18,7 @@ export function useOrderBookSSE(slug: string) {
   React.useEffect(() => {
     setLoading(true);
     setError(null);
-    const url = `/api/orderbook/${encodeURIComponent(slug)}/stream`;
+    const url = `${API_BASE}/orderbook/${encodeURIComponent(slug)}/stream`;
     const es = new EventSource(url);
 
     es.onmessage = (evt) => {

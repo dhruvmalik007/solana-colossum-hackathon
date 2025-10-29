@@ -8,6 +8,7 @@ import { Button } from "@repo/ui/components/ui/button";
 import { Spinner } from "@repo/ui/components/ui/spinner";
 import { AnimatedCard } from "@repo/ui/components/animated-card";
 import { useDailyJSON } from "../lib/client/useDailyJSON";
+import { API_BASE } from "@/lib/client/api";
 
 type Protocol = {
   slug: string;
@@ -22,7 +23,7 @@ type Protocol = {
 export default function HomeProtocolsClient() {
   const { data, loading, error } = useDailyJSON<Protocol[]>(
     "home:protocols:v2",
-    "/api/protocols",
+    `${API_BASE}/protocols`,
     24 * 60 * 60 * 1000
   );
   const list: Protocol[] = Array.isArray(data) ? data : [];

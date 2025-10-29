@@ -1,0 +1,46 @@
+{
+  "name": "@repo/solana-prediction",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Distributional prediction markets on Solana",
+  "type": "module",
+  "scripts": {
+    "test": "anchor test",
+    "test:unit": "anchor test --skip-deploy -- --grep 'Math'",
+    "test:integration": "anchor test --skip-deploy -- --grep -v 'Math'",
+    "test:verbose": "ANCHOR_LOG=true anchor test",
+    "build": "anchor build",
+    "clean": "anchor clean",
+    "deploy:devnet": "./scripts/deploy-devnet.sh",
+    "deploy:mainnet": "./scripts/deploy-mainnet.sh",
+    "verify:devnet": "./scripts/verify-deployment.sh devnet",
+    "verify:mainnet": "./scripts/verify-deployment.sh mainnet",
+    "generate-id": "./scripts/generate-program-id.sh",
+    "setup": "./scripts/setup-and-build.sh"
+  },
+  "keywords": [
+    "solana",
+    "anchor",
+    "prediction-markets",
+    "defi",
+    "distributional-markets"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/web3.js": "^1.95.8"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.11",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^22.15.3",
+    "chai": "^4.3.10",
+    "mocha": "^10.2.0",
+    "ts-mocha": "^10.0.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

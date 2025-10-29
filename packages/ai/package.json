@@ -1,15 +1,23 @@
 {
-  "name": "ai",
+  "name": "@repo/ai",
   "version": "0.0.0",
   "private": true,
   "scripts": {
     "clean": "git clean -xdf .cache .turbo dist node_modules",
-    "typecheck": "tsc --noEmit --emitDeclarationOnly false"
+    "typecheck": "tsc --noEmit --emitDeclarationOnly false",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.42",
     "@t3-oss/env-nextjs": "^0.13.8",
     "ai": "^5.0.60",
+    "axios": "^1.7.7",
+    "@smithy/signature-v4": "^5.3.3",
+    "@aws-sdk/credential-providers": "^3.919.0",
+    "@smithy/protocol-http": "^5.3.3",
+    "@aws-crypto/sha256-js": "^5.2.0",
+    "mem0ai": "^2.1.38",
     "react": "19.2.0",
     "react-markdown": "^10.1.0",
     "tailwind-merge": "^3.3.1",
@@ -19,6 +27,7 @@
     "@repo/typescript-config": "workspace:*",
     "@types/node": "24.7.0",
     "@types/react": "19.2.1",
-    "@types/react-dom": "19.2.0"
+    "@types/react-dom": "19.2.0",
+    "vitest": "^2.1.4"
   }
 }

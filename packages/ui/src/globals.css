@@ -1,8 +1,4 @@
-@tailwind base;
-
 @custom-variant dark (&:is(.dark *));
-@tailwind components;
-@tailwind utilities;
 
 @layer base {
   :root {
@@ -125,15 +121,5 @@
   to {
     background-position: 0% 0%;
     }
-  }}
-
-@layer base {
-  * {
-    border-color: hsl(var(--border));
-    outline-color: hsl(var(--ring) / 0.5);
-  }
-  body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
   }
 }

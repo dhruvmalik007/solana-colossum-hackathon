@@ -1,0 +1,38 @@
+{
+  "name": "@repo/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@drift-labs/sdk": "2.143.0-beta.0",
+    "@ellipsis-labs/phoenix-sdk": "^2.0.3",
+    "@jup-ag/core": "4.0.0-beta.21",
+    "@marinade.finance/marinade-ts-sdk": "^5.0.17",
+    "@meteora-ag/dlmm": "^1.7.5",
+    "@mrgnlabs/marginfi-client-v2": "^6.2.1",
+    "@openbook-dex/openbook-v2": "^0.2.10",
+    "@orca-so/whirlpools": "^4.0.0",
+    "@raydium-io/raydium-sdk-v2": "0.2.30-alpha",
+    "@repo/database": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "@solendprotocol/solend-sdk": "^0.14.26",
+    "@zetamarkets/sdk": "^1.64.2",
+    "jito-js-rpc": "^0.2.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

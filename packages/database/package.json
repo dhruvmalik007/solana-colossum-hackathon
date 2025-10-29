@@ -1,0 +1,28 @@
+{
+  "name": "@repo/database",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p . --emitDeclarationOnly",
+    "clean": "git clean -xdf .cache .turbo dist node_modules",
+    "typecheck": "tsc --noEmit --emitDeclarationOnly false"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.919.0",
+    "@aws-sdk/lib-dynamodb": "^3.919.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "24.7.0",
+    "typescript": "^5.9.3"
+  }
+}

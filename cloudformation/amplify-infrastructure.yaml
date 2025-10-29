@@ -44,6 +44,62 @@ Parameters:
     Default: https://api.devnet.solana.com
     Description: Solana devnet RPC endpoint
 
+  ApiBaseUrl:
+    Type: String
+    Default: http://localhost:3002
+    Description: Base URL for API (apps/api) used by web client
+
+
+  WebOrigin:
+    Type: String
+    Default: http://localhost:3000
+    Description: Web app origin for CORS and downstream services
+
+  # Draft parameters for mem0 self-hosting (non-destructive; no resources created yet)
+  Mem0Enabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Enable mem0 self-hosting resources. When false, no mem0 resources are created.
+
+  Mem0ServiceImage:
+    Type: String
+    Default: mem0ai/mem0:latest
+    Description: Docker image for mem0 service (informational, not used yet)
+
+  Mem0VectorDB:
+    Type: String
+    Default: weaviate
+    AllowedValues:
+      - weaviate
+      - pgvector
+      - milvus
+      - opensearch
+      - pinecone
+      - qdrant
+    Description: Vector DB provider for mem0 (informational)
+
+  Mem0GraphStore:
+    Type: String
+    Default: neo4j
+    AllowedValues:
+      - neo4j
+      - neptune
+      - kuzu
+      - none
+    Description: Graph store for mem0 graph memory (informational)
+
+  Mem0RerankerProvider:
+    Type: String
+    Default: sentence-transformers
+    AllowedValues:
+      - sentence-transformers
+      - cohere
+      - none
+    Description: Reranker provider for mem0 search (informational)
+
 Resources:
   # ============================================
   # DynamoDB Table for API Response Caching
@@ -69,8 +125,196 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref Environment
+
+  # ============================================
+  # Optional DynamoDB tables for memory integration (only when Mem0EnabledCond)
+  # ============================================
+  DiscussionThreadsTable:
+    Condition: Mem0EnabledCond
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'discussion-threads-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: threadId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: threadId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  DiscussionMessagesTable:
+    Condition: Mem0EnabledCond
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'discussion-messages-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: threadId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  MemoryPointersTable:
+    Condition: Mem0EnabledCond
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'memory-pointers-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================
+  # DynamoDB Trades Table with GSIs (by market time, by position time)
+  # ============================================
+  TradesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'trades-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: marketId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+        - AttributeName: positionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: trades_by_market_time
+          KeySchema:
+            - AttributeName: marketId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: trades_by_position_time
+          KeySchema:
+            - AttributeName: positionId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ============================================
+  # DynamoDB Positions Table with GSIs (by owner, by market)
+  # ============================================
+  PositionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'positions-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: owner
+          AttributeType: S
+        - AttributeName: marketId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: positions_by_owner
+          KeySchema:
+            - AttributeName: owner
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: positions_by_market
+          KeySchema:
+            - AttributeName: marketId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
         - Key: Application
           Value: SolanaPredictionMarkets
+
+  # ============================================
+  # DynamoDB Orders Table with GSIs for top-of-book queries
+  # ============================================
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'orders-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: marketSide
+          AttributeType: S
+        - AttributeName: sort
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: orders_by_market_buy
+          KeySchema:
+            - AttributeName: marketSide
+              KeyType: HASH
+            - AttributeName: sort
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: orders_by_market_sell
+          KeySchema:
+            - AttributeName: marketSide
+              KeyType: HASH
+            - AttributeName: sort
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
 
   # ============================================
   # Secrets Manager for Sensitive Configuration
@@ -146,7 +390,11 @@ Resources:
                   - dynamodb:DeleteItem
                   - dynamodb:Query
                   - dynamodb:Scan
-                Resource: !GetAtt APICacheTable.Arn
+                Resource:
+                  - !GetAtt APICacheTable.Arn
+                  - !GetAtt OrdersTable.Arn
+                  - !GetAtt TradesTable.Arn
+                  - !GetAtt PositionsTable.Arn
         - PolicyName: AmplifySecretsAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -217,8 +465,24 @@ Resources:
           Value: !Ref SolanaMainnetRPC
         - Name: NEXT_PUBLIC_SOLANA_DEVNET_RPC
           Value: !Ref SolanaDevnetRPC
+        - Name: NEXT_PUBLIC_API_BASE_URL
+          Value: !Ref ApiBaseUrl
+        - Name: WEB_ORIGIN
+          Value: !Ref WebOrigin
         - Name: DYNAMODB_CACHE_TABLE_NAME
           Value: !Ref APICacheTable
+        - Name: DYNAMODB_TABLE_ORDERS
+          Value: !Ref OrdersTable
+        - Name: DYNAMODB_TABLE_TRADES
+          Value: !Ref TradesTable
+        - Name: DYNAMODB_TABLE_POSITIONS
+          Value: !Ref PositionsTable
+        - Name: DYNAMODB_TABLE_DISCUSSION_THREADS
+          Value: !If [ Mem0EnabledCond, !Ref DiscussionThreadsTable, "discussion-threads" ]
+        - Name: DYNAMODB_TABLE_DISCUSSION_MESSAGES
+          Value: !If [ Mem0EnabledCond, !Ref DiscussionMessagesTable, "discussion-messages" ]
+        - Name: DYNAMODB_TABLE_MEMORY_POINTERS
+          Value: !If [ Mem0EnabledCond, !Ref MemoryPointersTable, "memory-pointers" ]
       CustomRules:
         - Source: /<*>
           Target: /index.html
@@ -273,7 +537,11 @@ Resources:
                   - dynamodb:DeleteItem
                   - dynamodb:Query
                   - dynamodb:Scan
-                Resource: !GetAtt APICacheTable.Arn
+                Resource:
+                  - !GetAtt APICacheTable.Arn
+                  - !GetAtt OrdersTable.Arn
+                  - !GetAtt TradesTable.Arn
+                  - !GetAtt PositionsTable.Arn
         - PolicyName: SecretsAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -298,6 +566,7 @@ Resources:
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, prod]
+  Mem0EnabledCond: !Equals [!Ref Mem0Enabled, "true"]
 
 Outputs:
   AmplifyAppId:

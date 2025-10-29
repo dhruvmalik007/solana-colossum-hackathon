@@ -1,0 +1,18 @@
+# Anchor build artifacts
+.anchor
+target/
+test-ledger/
+
+# Keypairs (NEVER commit these!)
+**/*-keypair.json
+*.json.bak
+
+# IDL (but allow test files)
+*.ts
+!tests/**/*.ts
+
+# Logs
+*.log
+
+# OS
+.DS_Store

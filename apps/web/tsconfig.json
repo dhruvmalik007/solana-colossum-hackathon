@@ -6,11 +6,11 @@
         "name": "next"
       }
     ],
-    "skipLibCheck": true
-  },
-
-  "paths": {
-    "@/*": ["./*"]
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
   "include": [
     "**/*.ts",

@@ -5,6 +5,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack --port 3000",
+    "dev:https": "concurrently -k -n NEXT,SSL \"next dev --turbopack --port 3000\" \"local-ssl-proxy --source 3443 --target 3000 --cert .ssl/localhost.pem --key .ssl/localhost-key.pem\"",
+    "dev:https:setup": "bash -c 'set -e; mkdir -p .ssl; if command -v mkcert >/dev/null 2>&1; then mkcert -install && mkcert -key-file .ssl/localhost-key.pem -cert-file .ssl/localhost.pem localhost; else openssl req -x509 -nodes -days 825 -newkey rsa:2048 -keyout .ssl/localhost-key.pem -out .ssl/localhost.pem -subj \"/CN=localhost\"; echo \"[info] OpenSSL cert created. In Keychain, set apps/web/.ssl/localhost.pem to Always Trust for Safari.\"; fi'",
+    "dev:https:3000": "concurrently -k -n NEXT,SSL \"next dev --turbopack --port 3001\" \"local-ssl-proxy --source 3000 --target 3001 --cert .ssl/localhost.pem --key .ssl/localhost-key.pem\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint --max-warnings 0",
@@ -12,9 +15,14 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.44",
-    "@aws-sdk/client-dynamodb": "^3.700.0",
-    "@aws-sdk/util-dynamodb": "^3.908.0",
+    "@aws-sdk/client-dynamodb": "^3.919.0",
+    "@aws-sdk/util-dynamodb": "^3.919.0",
+    "@copilotkit/react-core": "^1.0.0",
+    "@copilotkit/react-ui": "^1.0.0",
+    "@copilotkit/runtime": "^1.0.0",
     "@privy-io/react-auth": "^3.3.0",
+    "@repo/database": "workspace:*",
+    "@repo/ai": "workspace:*",
     "@repo/ui": "workspace:*",
     "@solana-program/memo": "^0.8.0",
     "@solana/kit": "^4.0.0",
@@ -24,6 +32,7 @@
     "@wallet-standard/core": "^1.1.1",
     "@wallet-standard/react": "^1.0.1",
     "ai": "^3.3.25",
+    "critters": "^0.0.22",
     "next": "^15.5.0",
     "next-themes": "^0.4.6",
     "openai": "^4.57.0",
@@ -32,7 +41,8 @@
     "recharts": "^2.15.4",
     "solana": "link:@privy-io/react-auth/solana",
     "tailwindcss": "^4.1.14",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:^",
@@ -42,8 +52,13 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^9.0.0",
     "eslint": "^9.34.0",
+    "local-ssl-proxy": "^1.3.0",
     "postcss": "^8.5.6",
     "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }

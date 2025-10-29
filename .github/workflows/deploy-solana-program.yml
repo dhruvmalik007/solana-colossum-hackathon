@@ -1,0 +1,297 @@
+name: Deploy Solana Program
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+    paths:
+      - 'packages/solana_prediction/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment (dev/staging/prod logical env)'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: 'dev'
+      cluster:
+        description: 'Solana cluster to deploy to'
+        required: true
+        type: choice
+        options:
+          - devnet
+          - mainnet-beta
+        default: 'devnet'
+      skip_build:
+        description: 'Skip build (upgrade only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: solana-deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and Deploy Solana Program
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ANCHOR_VERSION: '0.30.1'
+      SOLANA_VERSION: '1.18.18'
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Determine Env/Cluster
+        id: cfg
+        run: |
+          # Environment (logical) derived from dispatch or branch
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+            CLUSTER="${{ github.event.inputs.cluster }}"
+          else
+            # Auto map branch -> env; use devnet cluster
+            BRANCH="${{ github.ref_name }}"
+            if [ "$BRANCH" = "main" ]; then ENV=prod; else if [ "$BRANCH" = "staging" ]; then ENV=staging; else ENV=dev; fi; fi
+            CLUSTER="devnet"
+          fi
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "cluster=$CLUSTER" >> $GITHUB_OUTPUT
+          echo "Resolved env=$ENV, cluster=$CLUSTER"
+
+      - name: Decide AWS auth mode
+        run: |
+          if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
+            echo "USE_OIDC=true" >> $GITHUB_ENV
+          else
+            echo "USE_OIDC=false" >> $GITHUB_ENV
+          fi
+
+      - name: Configure AWS Credentials (OIDC)
+        if: env.USE_OIDC == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Configure AWS Credentials (Keys)
+        if: env.USE_OIDC == 'false'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            packages/solana_prediction/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v${{ env.SOLANA_VERSION }}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Anchor CLI
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor --tag v${{ env.ANCHOR_VERSION }} anchor-cli --locked
+
+      - name: Verify Installations
+        run: |
+          solana --version
+          anchor --version
+          rustc --version
+
+      - name: Retrieve Deployment Keypair
+        run: |
+          mkdir -p ~/.config/solana
+          # Prefer AWS Secrets Manager; fallback to repo secret SOLANA_DEPLOYER_KEYPAIR
+          if command -v aws >/dev/null 2>&1; then
+            true
+          else
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -qq awscliv2.zip
+            sudo ./aws/install
+          fi
+          SECRET_NAME="solana-prediction/${{ steps.cfg.outputs.environment }}/deployment-keypair"
+          echo "Attempting to retrieve $SECRET_NAME from Secrets Manager..."
+          if aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text --region ${{ secrets.AWS_REGION }} >/tmp/secret.json 2>/dev/null; then
+            cat /tmp/secret.json | jq -r '.keypair' > ~/.config/solana/id.json
+          elif [ -n "${{ secrets.SOLANA_DEPLOYER_KEYPAIR }}" ]; then
+            echo "Using SOLANA_DEPLOYER_KEYPAIR from repo secrets"
+            echo "${{ secrets.SOLANA_DEPLOYER_KEYPAIR }}" | base64 -d > ~/.config/solana/id.json
+          else
+            echo "::error::No deployer keypair found in Secrets Manager or repo secrets"
+            exit 1
+          fi
+          chmod 600 ~/.config/solana/id.json
+          solana config set --keypair ~/.config/solana/id.json
+          echo "Wallet address: $(solana address)"
+
+      - name: Restore Program Keypair
+        run: |
+          mkdir -p packages/solana_prediction/target/deploy
+          echo "${{ secrets.SOLANA_PROGRAM_KEYPAIR }}" | base64 -d > packages/solana_prediction/target/deploy/solana_prediction-keypair.json
+          chmod 600 packages/solana_prediction/target/deploy/solana_prediction-keypair.json
+          PROGRAM_ID=$(solana-keygen pubkey packages/solana_prediction/target/deploy/solana_prediction-keypair.json)
+          echo "Program ID: $PROGRAM_ID"
+          echo "program_id=$PROGRAM_ID" >> $GITHUB_ENV
+
+      - name: Set Network Config
+        run: |
+          CLUSTER="${{ steps.cfg.outputs.cluster }}"
+          if [ "$CLUSTER" = "mainnet-beta" ]; then RPC_URL="https://api.mainnet-beta.solana.com"; else RPC_URL="https://api.devnet.solana.com"; fi
+          solana config set --url "$RPC_URL"
+          echo "Cluster: $CLUSTER"
+          echo "RPC: $RPC_URL"
+
+      - name: Check Wallet Balance
+        id: balance
+        run: |
+          BALANCE=$(solana balance --lamports)
+          BALANCE_SOL=$(echo "scale=4; $BALANCE / 1000000000" | bc)
+          echo "balance_lamports=$BALANCE" >> $GITHUB_OUTPUT
+          echo "balance_sol=$BALANCE_SOL" >> $GITHUB_OUTPUT
+          echo "Wallet balance: $BALANCE_SOL SOL"
+
+      - name: Request Airdrop (Devnet Only)
+        if: steps.cfg.outputs.cluster == 'devnet' && steps.balance.outputs.balance_lamports < 1000000000
+        run: |
+          echo "Requesting airdrop..."
+          solana airdrop 2 || echo "Airdrop failed, continuing with existing balance"
+          sleep 5
+          solana balance
+
+      - name: Build Program
+        if: github.event.inputs.skip_build != 'true'
+        working-directory: packages/solana_prediction
+        run: |
+          echo "Building Anchor program..."
+          anchor build
+          ls -lh target/deploy/
+
+      - name: Deploy/Upgrade Program
+        working-directory: packages/solana_prediction
+        run: |
+          CLUSTER="${{ steps.cfg.outputs.cluster }}"
+          echo "Deploying to $CLUSTER..."
+          anchor deploy --provider.cluster "$CLUSTER"
+
+      - name: Verify Deployment
+        run: |
+          CLUSTER="${{ steps.cfg.outputs.cluster }}"
+          PROGRAM_ID="${{ env.program_id }}"
+          
+          if [ "$CLUSTER" = "mainnet-beta" ]; then
+            RPC_URL="https://api.mainnet-beta.solana.com"
+            EXPLORER_SUFFIX=""
+          else
+            RPC_URL="https://api.devnet.solana.com"
+            EXPLORER_SUFFIX="?cluster=devnet"
+          fi
+          
+          echo "Verifying program deployment..."
+          solana program show "$PROGRAM_ID" --url "$RPC_URL"
+          
+          echo "program_explorer_url=https://explorer.solana.com/address/$PROGRAM_ID$EXPLORER_SUFFIX" >> $GITHUB_ENV
+
+      - name: Store Program ID in SSM Parameter Store
+        run: |
+          PARAM_NAME="/solana-prediction/${{ steps.cfg.outputs.environment }}/program-id"
+          PROGRAM_ID="${{ env.program_id }}"
+          echo "Storing program ID in SSM: $PARAM_NAME"
+          aws ssm put-parameter \
+            --name "$PARAM_NAME" \
+            --value "$PROGRAM_ID" \
+            --type String \
+            --overwrite \
+            --region ${{ secrets.AWS_REGION }}
+          echo "Program ID stored successfully"
+
+      - name: Upload Artifacts to S3 (optional)
+        if: success()
+        working-directory: packages/solana_prediction
+        run: |
+          if [ -n "${{ secrets.ARTIFACTS_BUCKET }}" ]; then
+            TS=$(date +%Y%m%d%H%M%S)
+            SHA=${GITHUB_SHA::7}
+            ENV="${{ steps.cfg.outputs.environment }}"
+            CLUSTER="${{ steps.cfg.outputs.cluster }}"
+            PREFIX="artifacts/$ENV/$CLUSTER/$SHA-$TS"
+            echo "Uploading artifacts to s3://${{ secrets.ARTIFACTS_BUCKET }}/$PREFIX"
+            mkdir -p .artifacts
+            # Program pubkey
+            echo "${{ env.program_id }}" > .artifacts/PROGRAM_ID.txt
+            # Copy IDL if present
+            if [ -d "target/idl" ]; then cp -r target/idl .artifacts/idl; fi
+            # Copy binary and keypair
+            if [ -d "target/deploy" ]; then cp -r target/deploy .artifacts/deploy; fi
+            # Copy Anchor config
+            if [ -f "Anchor.toml" ]; then cp Anchor.toml .artifacts/; fi
+            # Write metadata
+            printf "ENV=%s\nCLUSTER=%s\nSHA=%s\nTIMESTAMP=%s\n" "$ENV" "$CLUSTER" "$SHA" "$TS" > .artifacts/METADATA
+            aws s3 cp .artifacts s3://${{ secrets.ARTIFACTS_BUCKET }}/$PREFIX/ --recursive --region ${{ secrets.AWS_REGION }}
+          fi
+
+      - name: Trigger Frontend Deployment
+        if: success()
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: solana-program-deployed
+          client-payload: |
+            {
+              "program_id": "${{ env.program_id }}",
+              "cluster": "${{ steps.cfg.outputs.cluster }}",
+              "environment": "${{ steps.cfg.outputs.environment }}",
+              "explorer_url": "${{ env.program_explorer_url }}"
+            }
+
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "### 🚀 Solana Program Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ steps.cfg.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster:** ${{ steps.cfg.outputs.cluster }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Program ID:** \`${{ env.program_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Explorer:** ${{ env.program_explorer_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Update your frontend .env:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "NEXT_PUBLIC_SOLANA_PROGRAM_ID=${{ env.program_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "NEXT_PUBLIC_SOLANA_CLUSTER=${{ steps.cfg.outputs.cluster }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster:** ${{ steps.cfg.outputs.cluster }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY

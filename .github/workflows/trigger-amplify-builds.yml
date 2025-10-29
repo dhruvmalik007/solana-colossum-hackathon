@@ -18,6 +18,9 @@ jobs:
   trigger-amplify:
     name: Trigger Amplify Build
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     
     steps:
       - name: Checkout code
@@ -26,12 +29,29 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Configure AWS Credentials
+      - name: Decide AWS auth mode
+        run: |
+          if [ -n "${{ secrets.AWS_ROLE_ARN }}" ]; then
+            echo "USE_OIDC=true" >> $GITHUB_ENV
+          else
+            echo "USE_OIDC=false" >> $GITHUB_ENV
+          fi
+
+      - name: Configure AWS Credentials (OIDC)
+        if: env.USE_OIDC == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Configure AWS Credentials (Keys)
+        if: env.USE_OIDC == 'false'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Get Amplify App ID
         id: get_amplify_app
@@ -44,7 +64,7 @@ jobs:
           APP_ID=$(aws amplify list-apps \
             --query "apps[?name=='$APP_NAME'].appId" \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           
           if [ -z "$APP_ID" ]; then
             echo "::error::Amplify app '$APP_NAME' not found"
@@ -53,6 +73,31 @@ jobs:
 
           echo "Found Amplify App ID: $APP_ID"
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+          echo "Found Amplify App ID: $APP_ID"
+
+      - name: Debug Amplify App & Branches
+        run: |
+          APP_ID="${{ steps.get_amplify_app.outputs.app_id }}"
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          SANITIZED=$(echo "$BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')
+          echo "SANITIZED_BRANCH=$SANITIZED" >> $GITHUB_ENV
+          echo "[Debug] Region: ${{ vars.AWS_REGION || 'us-east-1' }}"
+          echo "[Debug] App ID: $APP_ID"
+          echo "[Debug] Branch: $BRANCH (sanitized: $SANITIZED)"
+          echo "[Debug] App Info:"
+          aws amplify get-app \
+            --app-id "$APP_ID" \
+            --query 'app.{name:name,repository:repository,defaultDomain:defaultDomain,platform:platform}' \
+            --output table \
+            --region ${{ secrets.AWS_REGION }} || true
+          echo "[Debug] Existing branches:"
+          aws amplify list-branches \
+            --app-id "$APP_ID" \
+            --query 'branches[].branchName' \
+            --output text \
+            --region ${{ secrets.AWS_REGION }} || true
+        if: always()
 
       - name: Fetch Amplify Logs
         if: always()
@@ -68,21 +113,21 @@ jobs:
             --max-items 1 \
             --query 'jobSummaries[0].jobId' \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           echo "Latest Job ID: $JOB_ID"
           [ -z "$JOB_ID" ] && echo "No job found; skipping log fetch" && exit 0
           JOB_JSON=$(aws amplify get-job \
             --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
             --branch-name "$BRANCH" \
             --job-id "$JOB_ID" \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           mkdir -p amplify-logs
           echo "$JOB_JSON" > amplify-logs/job.json
           echo "## Amplify Job Summary" >> $GITHUB_STEP_SUMMARY
           echo "$JOB_JSON" | jq '{summary: .job.summary}' >> $GITHUB_STEP_SUMMARY
           COUNT=$(echo "$JOB_JSON" | jq '.job.steps | length')
           for i in $(seq 0 $((COUNT-1))); do
-            NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].name")
+            NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].stepName // .job.steps[$i].name // .job.steps[$i].phase // (\"step_${i}\")")
             STATUS=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].status")
             LOG_URL=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].logUrl // .job.steps[$i].logsUrl // empty")
             SAFE_NAME=$(echo "$NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
@@ -104,6 +149,36 @@ jobs:
           name: amplify-logs-${{ github.ref_name }}-${{ github.run_id }}
           path: amplify-logs
           if-no-files-found: ignore
+      
+      - name: Ensure Amplify branch exists
+        run: |
+          APP_ID="${{ steps.get_amplify_app.outputs.app_id }}"
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          SANITIZED=$(echo "$BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')
+          echo "Ensuring Amplify branch exists: $BRANCH (App: $APP_ID)"
+          ATTEMPTS=0
+          MAX_ATTEMPTS=6
+          until aws amplify get-branch \
+            --app-id "$APP_ID" \
+            --branch-name "$SANITIZED" \
+            --region ${{ secrets.AWS_REGION }} >/dev/null 2>&1; do
+            if [ $ATTEMPTS -ge $MAX_ATTEMPTS ]; then
+              echo "::error::Branch '$BRANCH' not found after $MAX_ATTEMPTS attempts."
+              echo "Existing branches:" 
+              aws amplify list-branches --app-id "$APP_ID" --query 'branches[].branchName' --output text --region ${{ secrets.AWS_REGION }} || true
+              exit 1
+            fi
+            echo "Branch '$BRANCH' not found. Creating (attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS)..."
+            aws amplify create-branch \
+              --app-id "$APP_ID" \
+              --branch-name "$SANITIZED" \
+              --region ${{ secrets.AWS_REGION }} || true
+            echo "Waiting 15s before re-check..."
+            sleep 15
+            ATTEMPTS=$((ATTEMPTS+1))
+          done
+          echo "Branch '$SANITIZED' is present in Amplify."
           
       - name: Check for existing running build
         id: check_pending
@@ -114,82 +189,167 @@ jobs:
           fi
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
-          COUNT=$(aws amplify list-jobs \
+          BRANCH=${SANITIZED_BRANCH:-$BRANCH}
+          echo "Using branch for list-jobs: $BRANCH"
+          COUNT="$(aws amplify list-jobs \
             --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
             --branch-name "$BRANCH" \
             --query "jobSummaries[?status=='PENDING' || status=='PROVISIONING' || status=='RUNNING'] | length(@)" \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }} 2>/tmp/amplify_err || true)"
+          if grep -q "NotFoundException" /tmp/amplify_err 2>/dev/null; then
+            echo "Branch not found during list-jobs; proceeding as 0 pending."
+            COUNT=0
+          fi
           echo "pending_count=$COUNT" >> $GITHUB_OUTPUT
           echo "Pending/running jobs: $COUNT"
 
-      - name: Trigger Amplify Build
+      - name: Start Amplify Build
         if: steps.check_pending.outputs.pending_count == '0'
+        id: start_build
         run: |
           # Get the branch name (default to main if not set)
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
+          BRANCH=${SANITIZED_BRANCH:-$BRANCH}
           
           echo "Starting Amplify build for app: ${{ steps.get_amplify_app.outputs.app_id }}, branch: $BRANCH"
           
           # Start the build
-          aws amplify start-job \
+          JOB_ID=$(aws amplify start-job \
             --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
             --branch-name "$BRANCH" \
             --job-type RELEASE \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }}
-          
-          echo "Amplify build triggered successfully"
+            --query 'jobSummary.jobId' \
+            --output text \
+            --region ${{ secrets.AWS_REGION }})
+
+          if [ -z "$JOB_ID" ] || [ "$JOB_ID" = "None" ]; then
+            echo "::error::Failed to start Amplify job (no jobId returned)."
+            exit 1
+          fi
+
+          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+          echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
+          echo "Amplify build triggered successfully (job: $JOB_ID)"
 
       - name: Skip start (using existing running build)
         if: steps.check_pending.outputs.pending_count != '0'
         run: |
           echo "An Amplify build is already pending/running for this branch. Skipping new start-job."
 
-      - name: Get Build Status
-        id: build_status
+      - name: Wait for Amplify Build Completion
         if: always()
+        id: wait_build
         run: |
-          # Get the latest build for the branch
+          APP_ID="${{ steps.get_amplify_app.outputs.app_id }}"
           BRANCH=${GITHUB_REF#refs/heads/}
           BRANCH=${BRANCH:-main}
-          
-          echo "Checking build status for branch: $BRANCH"
-          
-          # Get the latest build ID
-          BUILD_ID=$(aws amplify list-jobs \
-            --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
-            --branch-name "$BRANCH" \
-            --max-items 1 \
-            --query 'jobSummaries[0].jobId' \
-            --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
-          
-          if [ -z "$BUILD_ID" ] || [ "$BUILD_ID" = "None" ]; then
-            echo "::warning::No build found for branch $BRANCH"
+          BRANCH=${SANITIZED_BRANCH:-$BRANCH}
+          JOB_ID_INPUT="${{ steps.start_build.outputs.job_id }}"
+
+          # If we didn't start a new job (pending existed), fall back to latest job for branch
+          if [ -z "$JOB_ID_INPUT" ] || [ "$JOB_ID_INPUT" = "None" ]; then
+            JOB_ID_INPUT=$(aws amplify list-jobs \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH" \
+              --max-items 1 \
+              --query 'jobSummaries[0].jobId' \
+              --output text \
+              --region ${{ secrets.AWS_REGION }})
+          fi
+
+          if [ -z "$JOB_ID_INPUT" ] || [ "$JOB_ID_INPUT" = "None" ]; then
+            echo "::warning::No Amplify job found to wait on for branch '$BRANCH'"
             exit 0
           fi
+
+          echo "Waiting for Amplify build to complete (job: $JOB_ID_INPUT)"
+          MAX_WAIT=1800
+          ELAPSED=0
+          INTERVAL=20
+          mkdir -p amplify-logs
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            STATUS=$(aws amplify get-job \
+              --app-id "$APP_ID" \
+              --branch-name "$BRANCH" \
+              --job-id "$JOB_ID_INPUT" \
+              --query 'job.summary.status' \
+              --output text \
+              --region ${{ secrets.AWS_REGION }})
+            echo "Build status: $STATUS (elapsed: ${ELAPSED}s)"
+
+            if [ "$STATUS" = "SUCCEED" ]; then
+              echo "Build completed successfully."
+              echo "build_status=SUCCEED" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELLED" ]; then
+              echo "Build ended with status: $STATUS"
+              # Fetch job JSON and logs for troubleshooting
+              JOB_JSON=$(aws amplify get-job \
+                --app-id "$APP_ID" \
+                --branch-name "$BRANCH" \
+                --job-id "$JOB_ID_INPUT" \
+                --region ${{ secrets.AWS_REGION }})
+              echo "$JOB_JSON" > amplify-logs/job-${JOB_ID_INPUT}.json
+              COUNT=$(echo "$JOB_JSON" | jq '.job.steps | length')
+              for i in $(seq 0 $((COUNT-1))); do
+                NAME=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].stepName // .job.steps[$i].name // .job.steps[$i].phase // (\"step_${i}\")")
+                STATUS_STEP=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].status")
+                LOG_URL=$(echo "$JOB_JSON" | jq -r ".job.steps[$i].logUrl // .job.steps[$i].logsUrl // empty")
+                SAFE_NAME=$(echo "$NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+                echo "---- Step: $NAME (status: $STATUS_STEP) ----"
+                if [ -n "$LOG_URL" ]; then
+                  echo "Log URL: $LOG_URL"
+                  curl -sL "$LOG_URL" -o "amplify-logs/step-${i}-${SAFE_NAME}.log" || true
+                  echo "(saved to amplify-logs/step-${i}-${SAFE_NAME}.log)"
+                else
+                  echo "(no log URL available for $NAME)"
+                fi
+              done
+              echo "build_status=$STATUS" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          echo "Build wait timed out after ${MAX_WAIT}s"
+          echo "build_status=TIMEOUT" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Upload Amplify Logs Artifact (post-wait)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amplify-logs-${{ github.ref_name }}-${{ github.run_id }}
+          path: amplify-logs
+          if-no-files-found: warn
+
+      - name: Get Deployment URL
+        id: deployment_url
+        if: success()
+        run: |
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH=${BRANCH:-main}
+          BRANCH=${SANITIZED_BRANCH:-$BRANCH}
+          APP_ID="${{ steps.get_amplify_app.outputs.app_id }}"
           
-          # Get build details
-          BUILD_STATUS=$(aws amplify get-job \
-            --app-id ${{ steps.get_amplify_app.outputs.app_id }} \
-            --branch-name "$BRANCH" \
-            --job-id "$BUILD_ID" \
-            --query 'job.summary.status' \
+          APP_INFO=$(aws amplify get-app \
+            --app-id "$APP_ID" \
+            --query 'app.defaultDomain' \
             --output text \
-            --region ${{ vars.AWS_REGION || 'us-east-1' }})
+            --region ${{ secrets.AWS_REGION }})
           
-          echo "Build $BUILD_ID status: $BUILD_STATUS"
-          echo "build_status=$BUILD_STATUS" >> $GITHUB_OUTPUT
-          
-          # Set job status based on build status
-          if [ "$BUILD_STATUS" != "SUCCEED" ]; then
-            echo "::warning::Build $BUILD_ID is in state: $BUILD_STATUS"
-            # Uncomment to fail the workflow if build is not successful
-            # if [ "$BUILD_STATUS" = "FAILED" ] || [ "$BUILD_STATUS" = "CANCELLED" ]; then
-            #   exit 1
-            # fi
+          DOMAIN="$APP_INFO"
+          if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "None" ]; then
+            DOMAIN="${APP_ID}.amplifyapp.com"
           fi
+          
+          URL="https://${BRANCH}.${DOMAIN}"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "Deployment URL: $URL"
 
       - name: Comment on PR
         if: github.event_name == 'pull_request' && always()
@@ -208,9 +368,10 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body: `🚀 Amplify build triggered!\n` +
-                    `**Status:** ${{ steps.build_status.outputs.build_status || 'UNKNOWN' }}\n` +
+                    `**Status:** ${{ steps.wait_build.outputs.build_status || 'UNKNOWN' }}\n` +
                     `**Environment:** ${{ vars.ENVIRONMENT || 'dev' }}\n` +
-                    `**Branch:** ${process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'main'}`,
+                    `**Branch:** ${process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'main'}\n` +
+                    `**Deployment URL:** ${{ steps.deployment_url.outputs.url || 'Pending...' }}`,
             };
             
             // Check if we already have a comment from this action
