@@ -16,8 +16,8 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.679.0",
-    "@aws-sdk/lib-dynamodb": "^3.679.0",
+    "@aws-sdk/client-dynamodb": "^3.919.0",
+    "@aws-sdk/lib-dynamodb": "^3.919.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
