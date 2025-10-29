@@ -26,5 +26,16 @@
   "packageManager": "pnpm@9.0.0",
   "engines": {
     "node": "20.x"
+  },
+  "pnpm": {
+    "overrides": {
+      "@aws-sdk/client-dynamodb": "3.919.0",
+      "@aws-sdk/lib-dynamodb": "3.919.0",
+      "@aws-sdk/util-dynamodb": "3.919.0",
+      "@aws-sdk/credential-providers": "3.919.0",
+      "@smithy/types": "4.7.1",
+      "@smithy/protocol-http": "5.3.3",
+      "@smithy/signature-v4": "5.3.3"
+    }
   }
 }
