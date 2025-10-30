@@ -22,6 +22,7 @@
     "@raydium-io/raydium-sdk-v2": "0.2.30-alpha",
     "@repo/database": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@vercel/blob": "^2.0.0",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "@solendprotocol/solend-sdk": "^0.14.26",

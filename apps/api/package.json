@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@repo/ai": "workspace:*",
+    "@repo/indexer": "workspace:*",
     "@repo/database": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@ai-sdk/openai": "^2.0.44",
