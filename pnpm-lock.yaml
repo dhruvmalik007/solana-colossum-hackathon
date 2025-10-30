@@ -41,6 +41,9 @@ importers:
       '@repo/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@repo/indexer':
+        specifier: workspace:*
+        version: link:../../packages/indexer
       '@repo/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
