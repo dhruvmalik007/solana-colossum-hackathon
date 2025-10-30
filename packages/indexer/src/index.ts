@@ -1,26 +1,70 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import WebSocket from "ws";
-import { putMarket, putOrder, putTrade, type Market, type Order, type Trade } from "@repo/database";
+import { putMarket, putTrade, type Market, type Order, type Trade } from "@repo/database";
+import { startDefiLlamaCron } from "./jobs/defillamaCron";
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const RPC_URL = process.env.RPC_URL || "https://api.devnet.solana.com";
 const WS_URL = process.env.WS_URL || "wss://api.devnet.solana.com";
 const PROGRAM_ID = process.env.PROGRAM_ID || "";
 
-// Event discriminators (8-byte hash of event name)
-const EVENT_DISCRIMINATORS = {
-  MarketCreated: Buffer.from([/* 8 bytes from anchor IDL */]),
-  OrderPlaced: Buffer.from([/* 8 bytes */]),
-  TradeExecuted: Buffer.from([/* 8 bytes */]),
-  OrderCancelled: Buffer.from([/* 8 bytes */]),
-  MarketResolved: Buffer.from([/* 8 bytes */]),
-};
+// Event discriminators (first 8 bytes of sha256("event:" + name))
+/**
+ * Compute Anchor event discriminator bytes.
+ */
+function anchorEventDiscriminator(name: string): Buffer {
+  const digest = createHash("sha256").update(`event:${name}`).digest();
+  return digest.subarray(0, 8);
+}
+
+type AnchorIdlEvent = { name: string };
+type AnchorIdl = { events?: AnchorIdlEvent[] };
+
+/**
+ * Attempt to load IDL events from a JSON file. Use env SOLANA_PREDICTION_IDL to override path.
+ */
+function loadIdlEventNames(): string[] {
+  try {
+    const explicit = process.env.SOLANA_PREDICTION_IDL;
+    // From compiled dist directory, resolve up to the solana_prediction package target idl
+    const defaultPath = path.resolve(__dirname, "../../solana_prediction/target/idl/solana_prediction.json");
+    const idlPath = explicit ?? defaultPath;
+    const raw = fs.readFileSync(idlPath, "utf8");
+    const idl = JSON.parse(raw) as AnchorIdl;
+    return Array.isArray(idl.events) ? idl.events.map((e) => e.name) : [];
+  } catch {
+    return [];
+  }
+}
+
+const DEFAULT_EVENT_NAMES = [
+  "PmAmmInitialized",
+  "MarketCreated",
+  "OrderPlaced",
+  "TradeExecuted",
+  "OrderCancelled",
+  "MarketResolved",
+] as const;
+
+const EVENT_DISCRIMINATORS: Record<string, Buffer> = Object.fromEntries(
+  (loadIdlEventNames().length ? loadIdlEventNames() : DEFAULT_EVENT_NAMES).map((n) => [
+    n,
+    anchorEventDiscriminator(n),
+  ])
+);
 
 type EventLog = {
   txSig: string;
   slot: number;
   ixIndex: number;
   eventName: string;
-  data: any;
+  data: Record<string, string | number | boolean>;
 };
 
 function decodeEvent(log: string, txSig: string, slot: number, ixIndex: number): EventLog | null {
@@ -31,7 +75,7 @@ function decodeEvent(log: string, txSig: string, slot: number, ixIndex: number):
   const sep = rest.indexOf("|");
   const eventName = sep === -1 ? rest : rest.slice(0, sep);
   const kvStr = sep === -1 ? "" : rest.slice(sep + 1);
-  const data: Record<string, any> = {};
+  const data: Record<string, string | number | boolean> = {};
   if (kvStr) {
     for (const part of kvStr.split("|")) {
       const [k, v] = part.split("=");
@@ -60,30 +104,32 @@ async function upsertEvent(event: EventLog) {
   try {
     switch (event.eventName) {
       case "PmAmmInitialized": {
-        const id = String(event.data.market || `${event.txSig}:${event.ixIndex}`);
+        const id = String((event.data.market as string | number | boolean | undefined) ?? `${event.txSig}:${event.ixIndex}`);
+        const tsNum = Number((event.data.ts as string | number | boolean | undefined) ?? 0);
         const m: Market = {
           id,
           slug: id,
           title: id,
           description: undefined,
           category: undefined,
-          createdAt: new Date((event.data.ts || 0) * 1000).toISOString(),
+          createdAt: new Date(tsNum * 1000).toISOString(),
           resolutionTime: undefined,
           status: "Active",
         };
         await putMarket(m);
-        console.log(`[indexer] PmAmmInitialized: ${m.id} l0=${event.data.l0} fee_bps=${event.data.fee_bps}`);
+        console.log(`[indexer] PmAmmInitialized: ${m.id}`);
         break;
       }
       case "MarketCreated": {
-        const id = String(event.data.market || idemp);
+        const id = String((event.data.market as string | number | boolean | undefined) ?? idemp);
+        const tsNum = Number((event.data.ts as string | number | boolean | undefined) ?? 0);
         const m: Market = {
           id,
           slug: id,
           title: id,
           description: undefined,
           category: undefined,
-          createdAt: new Date((event.data.ts || 0) * 1000).toISOString(),
+          createdAt: new Date(tsNum * 1000).toISOString(),
           resolutionTime: undefined,
           status: "Active",
         };
@@ -92,30 +138,43 @@ async function upsertEvent(event: EventLog) {
         break;
       }
       case "OrderPlaced": {
-        const o: Order = {
-          id: `${event.data.market}:${event.data.order_id}`,
-          marketId: event.data.market,
-          side: event.data.side === 0 ? "Buy" : "Sell",
-          price: event.data.price_bps / 10000,
-          size: event.data.size,
-          remaining: event.data.size,
-          status: "Open",
-          createdAt: new Date(event.data.ts * 1000).toISOString(),
+        // Represent an order placement as a synthetic trade snapshot for analytics (no DB order table here)
+        const market = String((event.data.market as string | number | boolean | undefined) ?? "");
+        const orderId = String((event.data.order_id as string | number | boolean | undefined) ?? `${event.txSig}:${event.ixIndex}`);
+        const side = Number((event.data.side as string | number | boolean | undefined) ?? 0) === 0 ? "Buy" : "Sell";
+        const priceBps = Number((event.data.price_bps as string | number | boolean | undefined) ?? 0);
+        const sizeNum = Number((event.data.size as string | number | boolean | undefined) ?? 0);
+        const tsNum = Number((event.data.ts as string | number | boolean | undefined) ?? 0);
+        const t: Trade = {
+          id: `${market}:${orderId}`,
+          marketId: market,
+          positionId: `${market}:order`,
+          side,
+          size: sizeNum,
+          avgPrice: priceBps / 10000,
+          feesPaid: 0,
+          createdAt: new Date(tsNum * 1000).toISOString(),
         };
-        await putOrder(o);
-        console.log(`[indexer] OrderPlaced: ${o.id}`);
+        await putTrade(t);
+        console.log(`[indexer] OrderPlaced: ${t.id}`);
         break;
       }
       case "TradeExecuted": {
+        const market = String((event.data.market as string | number | boolean | undefined) ?? "");
+        const taker = String((event.data.taker as string | number | boolean | undefined) ?? "taker");
+        const side = Number((event.data.side as string | number | boolean | undefined) ?? 0) === 0 ? "Buy" : "Sell";
+        const sizeNum = Number((event.data.size as string | number | boolean | undefined) ?? 0);
+        const priceBps = Number((event.data.price_bps as string | number | boolean | undefined) ?? 0);
+        const tsNum = Number((event.data.ts as string | number | boolean | undefined) ?? 0);
         const t: Trade = {
           id: `${event.txSig}:${event.ixIndex}`,
-          marketId: event.data.market,
-          positionId: `${event.data.market}:${event.data.taker}`,
-          side: event.data.side === 0 ? "Buy" : "Sell",
-          size: event.data.size,
-          avgPrice: event.data.price_bps / 10000,
+          marketId: market,
+          positionId: `${market}:${taker}`,
+          side,
+          size: sizeNum,
+          avgPrice: priceBps / 10000,
           feesPaid: 0,
-          createdAt: new Date(event.data.ts * 1000).toISOString(),
+          createdAt: new Date(tsNum * 1000).toISOString(),
         };
         await putTrade(t);
         console.log(`[indexer] TradeExecuted: ${t.id}`);
@@ -197,12 +256,21 @@ async function main() {
   console.log("[indexer] Starting Solana event indexer");
   console.log(`[indexer] RPC: ${RPC_URL}`);
   console.log(`[indexer] Program: ${PROGRAM_ID}`);
-  
+
   // Optional: backfill historical events
   // await backfill(PROGRAM_ID);
-  
+
   // Subscribe to live logs
   await subscribeToLogs();
+
+  // Start DefiLlama offchain oracle cron -> writes structured snapshots to Vercel Blob
+  const _defillamaCron = startDefiLlamaCron({
+    prefix: process.env.BLOB_PREFIX,
+    intervalMs: process.env.DEFI_LLAMA_CRON_MS ? Number(process.env.DEFI_LLAMA_CRON_MS) : undefined,
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
 }
 
 main().catch(console.error);
+
+export { runDefiLlamaOnce } from "./jobs/defillamaCron";

@@ -1,6 +1,6 @@
 import MemoryClient from "mem0ai";
 import type { GraphStore, GraphFilters, GraphNodeRef, GraphEdgeRef, GraphTriple } from "./graph/types";
-import { NeptuneGraphStore } from "./graph/neptune";
+import { Neo4jGraphStore } from "./graph/neo4j";
 
 /**
  * Parameters passed alongside memory operations to scope ownership and features.
@@ -159,16 +159,23 @@ export class MemoryManager {
   }
 
   /**
-   * Configure Neptune-backed GraphStore from environment if NEPTUNE_* variables are present.
-   * NEPTUNE_ENDPOINT (required), NEPTUNE_REGION (required), NEPTUNE_IAM (optional "true"/"false"), GRAPH_DATASET (optional)
+   * Configure a Neo4j-backed GraphStore from environment variables.
+   *
+   * Expected variables:
+   * - NEO4J_URI or NEO4J_URL (bolt/neo4j+s connection string)
+   * - NEO4J_USERNAME
+   * - NEO4J_PASSWORD
+   * - NEO4J_DATABASE (optional)
+   * - GRAPH_DATASET (optional default dataset tag)
    */
   configureGraphFromEnv(): void {
-    const endpoint = process.env.NEPTUNE_ENDPOINT;
-    const region = process.env.NEPTUNE_REGION;
-    if (!endpoint || !region) return;
-    const useIamAuth = String(process.env.NEPTUNE_IAM || "false").toLowerCase() === "true";
+    const url = process.env.NEO4J_URI || process.env.NEO4J_URL;
+    const username = process.env.NEO4J_USERNAME;
+    const password = process.env.NEO4J_PASSWORD;
+    if (!url || !username || !password) return;
+    const database = process.env.NEO4J_DATABASE || undefined;
     const datasetDefault = process.env.GRAPH_DATASET || undefined;
-    const store = new NeptuneGraphStore({ endpoint, region, useIamAuth, datasetDefault });
+    const store = new Neo4jGraphStore({ url, username, password, database, datasetDefault });
     this.setGraphStore(store);
   }
 

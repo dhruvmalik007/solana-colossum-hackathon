@@ -1,0 +1,203 @@
+// Prisma schema for Neon (PostgreSQL) using Prisma driver adapters
+// Generator outputs to ../generated/client to match Next Forge pattern
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  relationMode = "prisma"
+}
+
+enum MarketStatus {
+  Draft
+  Active
+  Resolving
+  Resolved
+}
+
+enum Side {
+  Buy
+  Sell
+}
+
+enum OrderStatus {
+  Open
+  Filled
+  Cancelled
+}
+
+enum VerificationStatus {
+  pending
+  verified
+  rejected
+}
+
+enum ThreadStatus {
+  open
+  closed
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+}
+
+enum MemoryOwnerType {
+  thread
+  message
+  market
+  user
+}
+
+enum Provider {
+  mem0
+}
+
+enum CreatorRole {
+  creator
+  participant
+  both
+}
+
+model Market {
+  id             String            @id
+  slug           String            @unique
+  title          String
+  description    String?
+  category       String?
+  createdAt      DateTime
+  resolutionTime DateTime?
+  status         MarketStatus
+  positions      Position[]
+  trades         Trade[]
+  orders         Order[]
+  comments       Comment[]
+  embeds         Embed[]
+  threads        DiscussionThread[]
+}
+
+model Position {
+  id               String   @id
+  marketId         String
+  owner            String
+  size             Float
+  collateralLocked Float
+  createdAt        DateTime
+  market           Market   @relation(fields: [marketId], references: [id])
+  trades           Trade[]
+
+  @@index([owner])
+  @@index([marketId])
+}
+
+model Trade {
+  id         String   @id
+  marketId   String
+  positionId String
+  side       Side
+  size       Float
+  avgPrice   Float
+  feesPaid   Float
+  createdAt  DateTime
+  market     Market   @relation(fields: [marketId], references: [id])
+  position   Position @relation(fields: [positionId], references: [id])
+
+  @@index([marketId, createdAt])
+  @@index([positionId, createdAt])
+}
+
+model Order {
+  id        String   @id
+  marketId  String
+  side      Side
+  price     Float
+  size      Float
+  remaining Float
+  status    OrderStatus
+  createdAt DateTime
+  market    Market   @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, side, createdAt])
+}
+
+model CreatorProfile {
+  userId              String            @id
+  walletAddress       String
+  role                CreatorRole
+  portfolioConnected  Boolean
+  portfolioStats      Json?
+  profileData         Json?
+  verificationStatus  VerificationStatus
+  createdAt           DateTime
+  updatedAt           DateTime
+}
+
+model Comment {
+  id        String   @id
+  marketId  String
+  userId    String
+  parentId  String?
+  text      String
+  votes     Int
+  createdAt DateTime
+  market    Market   @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, createdAt])
+}
+
+model Embed {
+  id        String   @id
+  marketId  String
+  url       String
+  source    String
+  html      String?
+  createdAt DateTime
+  market    Market   @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, createdAt])
+}
+
+model DiscussionThread {
+  threadId  String   @id
+  marketId  String
+  createdBy String
+  status    ThreadStatus
+  createdAt DateTime
+  updatedAt DateTime?
+  market    Market   @relation(fields: [marketId], references: [id])
+  messages  DiscussionMessage[]
+
+  @@index([marketId])
+}
+
+model DiscussionMessage {
+  id         String   @id
+  threadId   String
+  userId     String
+  role       MessageRole
+  content    String
+  attachments Json?
+  createdAt  DateTime
+  thread     DiscussionThread @relation(fields: [threadId], references: [threadId])
+
+  @@index([threadId, createdAt])
+}
+
+model MemoryPointer {
+  id         String          @id
+  ownerType  MemoryOwnerType
+  ownerId    String
+  provider   Provider
+  vectorId   String?
+  graphNodeId String?
+  tags       String[]?
+  metadata   Json?
+  createdAt  DateTime
+
+  @@index([ownerType, ownerId])
+}

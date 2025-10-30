@@ -1,13 +1,6 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { env } from "./keys";
 
-const baseClient = new DynamoDBClient({
-  region: env.AWS_REGION,
-  endpoint: env.AWS_DYNAMODB_ENDPOINT,
-});
+import { getPrisma } from "./prismaClient";
 
-export const ddb = DynamoDBDocumentClient.from(baseClient);
 
 export type MarketStatus = "Draft" | "Active" | "Resolving" | "Resolved";
 
@@ -21,6 +14,42 @@ export type Market = {
   resolutionTime?: string; // ISO
   status: MarketStatus;
 };
+
+// Narrowing helpers to convert database strings to strict unions
+function toMarketStatus(s: string): MarketStatus {
+  switch (s) {
+    case "Draft":
+    case "Active":
+    case "Resolving":
+    case "Resolved":
+      return s;
+    default:
+      return "Active";
+  }
+}
+
+function toSide(s: string): "Buy" | "Sell" {
+  return s === "Sell" ? "Sell" : "Buy";
+}
+
+function toOrderStatus(s: string): "Open" | "Filled" | "Cancelled" {
+  switch (s) {
+    case "Filled":
+    case "Cancelled":
+      return s;
+    default:
+      return "Open";
+  }
+}
+
+function toThreadStatus(s: string): "open" | "closed" {
+  return s === "closed" ? "closed" : "open";
+}
+
+function toMessageRole(s: string): "user" | "assistant" | "system" {
+  if (s === "assistant" || s === "system") return s;
+  return "user";
+}
 
 export type Position = {
   id: string; // partition key
@@ -42,188 +71,19 @@ export type Trade = {
   createdAt: string;
 };
 
-// Markets
-export async function putMarket(market: Market) {
-  await ddb.send(
-    new PutCommand({ TableName: env.DYNAMODB_TABLE_MARKETS, Item: market })
-  );
-}
-
-export async function getMarket(id: string) {
-  const out = await ddb.send(
-    new GetCommand({ TableName: env.DYNAMODB_TABLE_MARKETS, Key: { id } })
-  );
-  return (out.Item as Market) ?? null;
-}
-
-export async function getMarketBySlug(slug: string) {
-  // For MVP, id == slug
-  return getMarket(slug);
-}
-
-// Positions
-export async function putPosition(position: Position) {
-  await ddb.send(
-    new PutCommand({ TableName: env.DYNAMODB_TABLE_POSITIONS, Item: position })
-  );
-}
-
-// Trades
-export async function putTrade(trade: Trade) {
-  await ddb.send(
-    new PutCommand({ TableName: env.DYNAMODB_TABLE_TRADES, Item: trade })
-  );
-}
-
-// List helpers (MVP scans; optimize with GSIs later)
-export async function listMarkets() {
-  const out = await ddb.send(
-    new ScanCommand({ TableName: env.DYNAMODB_TABLE_MARKETS })
-  );
-  return (out.Items as Market[]) ?? [];
-}
-
-// Orders (separate table suggested; reusing TRADES or new table requires env)
-export type Order = {
-  id: string;
-  marketId: string;
-  side: "Buy" | "Sell";
-  price: number;
-  size: number;
-  remaining: number;
-  status: "Open" | "Filled" | "Cancelled";
-  createdAt: string;
-};
-
-export async function putOrder(order: Order) {
-  const table = env.DYNAMODB_TABLE_ORDERS;
-  const marketSide = `${order.marketId}#${order.side}`;
-  // Use integer sort key based on price for stable ordering across GSIs
-  const sort = Math.floor(Number(order.price) * 1_000_000);
-  await ddb.send(
-    new PutCommand({ TableName: table, Item: { ...order, marketSide, sort } })
-  );
-}
-
-export async function listOrdersByMarket(marketId: string) {
-  const table = env.DYNAMODB_TABLE_ORDERS;
-  // TODO: Once GSIs are created, use QueryCommand on GSI1 (marketSide) for top-of-book
-  // For now, use scan as MVP
-  const out = await ddb.send(
-    new ScanCommand({ TableName: table, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
-  );
-  return (out.Items as Order[]) ?? [];
-}
-
-// GSI-optimized queries (to be used after GSIs are created per DYNAMODB_GSIS.md)
-export async function getTopBids(marketId: string, limit = 10) {
-  // Query GSI: orders_by_market_buy (PK=marketId#Buy, SK=sort DESC)
-  // Returns highest bids first
-  const table = env.DYNAMODB_TABLE_ORDERS;
-  const out = await ddb.send(
-    new QueryCommand({
-      TableName: table,
-      IndexName: "orders_by_market_buy",
-      KeyConditionExpression: "marketSide = :ms",
-      ExpressionAttributeValues: { ":ms": `${marketId}#Buy` },
-      ScanIndexForward: false, // DESC
-      Limit: limit,
-    })
-  );
-  return (out.Items as Order[]) ?? [];
-}
-
-export async function getTopAsks(marketId: string, limit = 10) {
-  // Query GSI: orders_by_market_sell (PK=marketId#Sell, SK=sort ASC)
-  // Returns lowest asks first
-  const table = env.DYNAMODB_TABLE_ORDERS;
-  const out = await ddb.send(
-    new QueryCommand({
-      TableName: table,
-      IndexName: "orders_by_market_sell",
-      KeyConditionExpression: "marketSide = :ms",
-      ExpressionAttributeValues: { ":ms": `${marketId}#Sell` },
-      ScanIndexForward: true, // ASC
-      Limit: limit,
-    })
-  );
-  return (out.Items as Order[]) ?? [];
-}
-
-export async function listTradesByMarket(marketId: string) {
-  const out = await ddb.send(
-    new ScanCommand({ TableName: env.DYNAMODB_TABLE_TRADES, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
-  );
-  return (out.Items as Trade[]) ?? [];
-}
-
-// GSI: trades_by_market_time (PK=marketId, SK=createdAt)
-export async function listTradesByMarketTime(marketId: string, limit = 100, oldestFirst = false) {
-  const out = await ddb.send(
-    new QueryCommand({
-      TableName: env.DYNAMODB_TABLE_TRADES,
-      IndexName: "trades_by_market_time",
-      KeyConditionExpression: "marketId = :m",
-      ExpressionAttributeValues: { ":m": marketId },
-      ScanIndexForward: oldestFirst, // false => newest first
-      Limit: limit,
-    })
-  );
-  return (out.Items as Trade[]) ?? [];
-}
-
-// GSI: trades_by_position_time (PK=positionId, SK=createdAt)
-export async function listTradesByPositionTime(positionId: string, limit = 100, oldestFirst = false) {
-  const out = await ddb.send(
-    new QueryCommand({
-      TableName: env.DYNAMODB_TABLE_TRADES,
-      IndexName: "trades_by_position_time",
-      KeyConditionExpression: "positionId = :p",
-      ExpressionAttributeValues: { ":p": positionId },
-      ScanIndexForward: oldestFirst,
-      Limit: limit,
-    })
-  );
-  return (out.Items as Trade[]) ?? [];
-}
-
-// Positions GSIs
-export async function listPositionsByOwner(owner: string, limit = 100) {
-  const out = await ddb.send(
-    new QueryCommand({
-      TableName: env.DYNAMODB_TABLE_POSITIONS,
-      IndexName: "positions_by_owner",
-      KeyConditionExpression: "owner = :o",
-      ExpressionAttributeValues: { ":o": owner },
-      Limit: limit,
-    })
-  );
-  return (out.Items as Position[]) ?? [];
-}
-
-export async function listPositionsByMarket(marketId: string, limit = 100) {
-  const out = await ddb.send(
-    new QueryCommand({
-      TableName: env.DYNAMODB_TABLE_POSITIONS,
-      IndexName: "positions_by_market",
-      KeyConditionExpression: "marketId = :m",
-      ExpressionAttributeValues: { ":m": marketId },
-      Limit: limit,
-    })
-  );
-  return (out.Items as Position[]) ?? [];
-}
-
 export type CreatorProfile = {
   userId: string;
   walletAddress: string;
   role: "creator" | "participant" | "both";
   portfolioConnected: boolean;
   portfolioStats?: {
-    totalMarketsCreated: number;
-    totalVolume: number;
-    successRate: number;
-    averageAccuracy: number;
+    totalMarketsCreated?: number;
+    totalVolume?: number;
+    successRate?: number;
+    averageAccuracy?: number;
+    solBalance?: number;
+    tokenHoldings?: Array<{ mint: string; amount: number; decimals: number }>;
+    nftCount?: number;
   };
   profileData?: {
     displayName: string;
@@ -236,20 +96,6 @@ export type CreatorProfile = {
   updatedAt: string;
 };
 
-export async function putCreatorProfile(profile: CreatorProfile) {
-  await ddb.send(
-    new PutCommand({ TableName: env.DYNAMODB_TABLE_CREATOR_PROFILES, Item: profile })
-  );
-}
-
-export async function getCreatorProfile(userId: string) {
-  const out = await ddb.send(
-    new GetCommand({ TableName: env.DYNAMODB_TABLE_CREATOR_PROFILES, Key: { userId } })
-  );
-  return (out.Item as CreatorProfile) ?? null;
-}
-
-// Comments
 export type Comment = {
   id: string;
   marketId: string;
@@ -260,28 +106,220 @@ export type Comment = {
   createdAt: string;
 };
 
+// Markets
+/**
+ * Create or update a market.
+ */
+export async function putMarket(market: Market) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const return_params_hosted = await prisma.market.upsert({
+    where: { id: market.id },
+    create: {
+      id: market.id,
+      slug: market.slug,
+      title: market.title,
+      description: market.description ?? null,
+      category: market.category ?? null,
+      createdAt: new Date(market.createdAt),
+      resolutionTime: market.resolutionTime ? new Date(market.resolutionTime) : null,
+      status: market.status,
+    },
+    update: {
+      slug: market.slug,
+      title: market.title,
+      description: market.description ?? null,
+      category: market.category ?? null,
+      resolutionTime: market.resolutionTime ? new Date(market.resolutionTime) : null,
+      status: market.status,
+    },
+  });
+  return return_params_hosted;
+}
+
+/**
+ * Fetch a market by id.
+ * Prisma path returns Market mapped from relational row; fallback uses DynamoDB.
+ */
+export async function getMarket(id: string) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const m = await prisma.market.findUnique({ where: { id } });
+  if (!m) return null;
+  return {
+    id: m.id,
+    slug: m.slug,
+    title: m.title,
+    description: m.description ?? undefined,
+    category: m.category ?? undefined,
+    createdAt: m.createdAt.toISOString(),
+    resolutionTime: m.resolutionTime ? m.resolutionTime.toISOString() : undefined,
+    status: toMarketStatus(String(m.status)),
+  } satisfies Market;
+}
+
+/**
+ * Fetch a market by slug.
+ * Prisma path queries unique slug; fallback assumes id == slug.
+ */
+export async function getMarketBySlug(slug: string) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const m = await prisma.market.findUnique({ where: { slug } });
+  if (!m) return null;
+  return {
+    id: m.id,
+    slug: m.slug,
+    title: m.title,
+    description: m.description ?? undefined,
+    category: m.category ?? undefined,
+    createdAt: m.createdAt.toISOString(),
+    resolutionTime: m.resolutionTime ? m.resolutionTime.toISOString() : undefined,
+    status: toMarketStatus(String(m.status)),
+  } satisfies Market;
+}
+
+// Positions
+/**
+ * Create a position using Prisma + Neon.
+ */
+export async function putPosition(position: Position) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.position.create({
+    data: {
+      id: position.id,
+      marketId: position.marketId,
+      owner: position.owner,
+      size: position.size,
+      collateralLocked: position.collateralLocked,
+      createdAt: new Date(position.createdAt),
+    },
+  });
+}
+
+// List helpers
+/**
+ * List all markets. Prisma returns rows ordered by createdAt desc to match API semantics.
+ */
+export async function listMarkets() {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const rows = (await prisma.market.findMany({ orderBy: { createdAt: "desc" } })) as Array<{
+    id: string; slug: string; title: string; description: string | null; category: string | null; createdAt: Date; resolutionTime: Date | null; status: string;
+  }>;
+  return rows.map((m: { id: string; slug: string; title: string; description: string | null; category: string | null; createdAt: Date; resolutionTime: Date | null; status: string; }) => ({
+    id: m.id,
+    slug: m.slug,
+    title: m.title,
+    description: m.description ?? undefined,
+    category: m.category ?? undefined,
+    createdAt: m.createdAt.toISOString(),
+    resolutionTime: m.resolutionTime ? m.resolutionTime.toISOString() : undefined,
+    status: toMarketStatus(String(m.status)),
+  })) satisfies Market[];
+}
+
+// Orders
+export type Order = {
+  id: string;
+  marketId: string;
+  side: "Buy" | "Sell";
+  price: number;
+  size: number;
+  remaining: number;
+  status: "Open" | "Filled" | "Cancelled";
+  createdAt: string;
+};
+
+// Trades
+/**
+ * Create a trade using Prisma + Neon.
+ */
+export async function putTrade(trade: Trade) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.trade.create({
+    data: {
+      id: trade.id,
+      marketId: trade.marketId,
+      positionId: trade.positionId,
+      side: trade.side,
+      size: trade.size,
+      avgPrice: trade.avgPrice,
+      feesPaid: trade.feesPaid,
+      createdAt: new Date(trade.createdAt),
+    },
+  });
+}
+
+// Removed DynamoDB-specific helpers.
+
+// Fix lint about 'r' implicit any via typed param
+export async function getCreatorProfile(userId: string) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const r: { userId: string; walletAddress: string; role: string; portfolioConnected: boolean; portfolioStats: unknown; profileData: unknown; verificationStatus: string; createdAt: Date; updatedAt: Date; } | null = await prisma.creatorProfile.findUnique({ where: { userId } });
+  if (!r) return null;
+  return {
+    userId: r.userId,
+    walletAddress: r.walletAddress,
+    role: r.role as "creator" | "participant" | "both",
+    portfolioConnected: r.portfolioConnected,
+    portfolioStats: (r.portfolioStats as unknown as CreatorProfile["portfolioStats"]) ?? undefined,
+    profileData: (r.profileData as unknown as CreatorProfile["profileData"]) ?? undefined,
+    verificationStatus: r.verificationStatus as "pending" | "verified" | "rejected",
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  } satisfies CreatorProfile;
+}
+
+/**
+ * Insert a comment using Prisma + Neon.
+ */
 export async function putComment(comment: Comment) {
-  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_COMMENTS, Item: comment }));
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.comment.create({
+    data: {
+      id: comment.id,
+      marketId: comment.marketId,
+      userId: comment.userId,
+      parentId: comment.parentId ?? null,
+      text: comment.text,
+      votes: comment.votes,
+      createdAt: new Date(comment.createdAt),
+    },
+  });
 }
 
+/**
+ * List comments for a market ordered by createdAt asc.
+ */
 export async function listCommentsByMarket(marketId: string) {
-  const out = await ddb.send(
-    new ScanCommand({ TableName: env.DYNAMODB_TABLE_COMMENTS, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
-  );
-  const items = (out.Items as Comment[]) ?? [];
-  items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  return items;
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const rows = (await prisma.comment.findMany({ where: { marketId }, orderBy: { createdAt: "asc" } })) as Array<{
+    id: string; marketId: string; userId: string; parentId: string | null; text: string; votes: number; createdAt: Date;
+  }>;
+  return rows.map((c: { id: string; marketId: string; userId: string; parentId: string | null; text: string; votes: number; createdAt: Date; }) => ({
+    id: c.id,
+    marketId: c.marketId,
+    userId: c.userId,
+    parentId: c.parentId ?? undefined,
+    text: c.text,
+    votes: c.votes,
+    createdAt: c.createdAt.toISOString(),
+  })) satisfies Comment[];
 }
 
+/**
+ * Increment or decrement comment votes.
+ */
 export async function updateCommentVotes(id: string, delta: number) {
-  await ddb.send(
-    new UpdateCommand({
-      TableName: env.DYNAMODB_TABLE_COMMENTS,
-      Key: { id },
-      UpdateExpression: "SET votes = if_not_exists(votes, :zero) + :d",
-      ExpressionAttributeValues: { ":d": delta, ":zero": 0 },
-    })
-  );
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.comment.update({ where: { id }, data: { votes: { increment: delta } } });
 }
 
 // Embeds
@@ -294,20 +332,44 @@ export type Embed = {
   createdAt: string;
 };
 
+/**
+ * Insert an embed.
+ */
 export async function putEmbed(embed: Embed) {
-  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_EMBEDS, Item: embed }));
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.embed.create({
+    data: {
+      id: embed.id,
+      marketId: embed.marketId,
+      url: embed.url,
+      source: embed.source,
+      html: embed.html ?? null,
+      createdAt: new Date(embed.createdAt),
+    },
+  });
 }
 
+/**
+ * List embeds for a market ordered by createdAt asc.
+ */
 export async function listEmbedsByMarket(marketId: string) {
-  const out = await ddb.send(
-    new ScanCommand({ TableName: env.DYNAMODB_TABLE_EMBEDS, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
-  );
-  const items = (out.Items as Embed[]) ?? [];
-  items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  return items;
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const rows = (await prisma.embed.findMany({ where: { marketId }, orderBy: { createdAt: "asc" } })) as Array<{
+    id: string; marketId: string; url: string; source: string; html: string | null; createdAt: Date;
+  }>;
+  return rows.map((e: { id: string; marketId: string; url: string; source: string; html: string | null; createdAt: Date; }) => ({
+    id: e.id,
+    marketId: e.marketId,
+    url: e.url,
+    source: e.source,
+    html: e.html ?? undefined,
+    createdAt: e.createdAt.toISOString(),
+  })) satisfies Embed[];
 }
 
-export * from "./schemas";
+// schemas.ts merged into Prisma schema; no re-export
 
 export type DiscussionThread = {
   threadId: string;
@@ -341,47 +403,115 @@ export type MemoryPointer = {
 };
 
 export async function putDiscussionThread(t: DiscussionThread) {
-  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_THREADS, Item: t }));
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.discussionThread.create({
+    data: {
+      threadId: t.threadId,
+      marketId: t.marketId,
+      createdBy: t.createdBy,
+      status: t.status,
+      createdAt: new Date(t.createdAt),
+      updatedAt: t.updatedAt ? new Date(t.updatedAt) : null,
+    },
+  });
 }
 
 export async function getDiscussionThread(threadId: string) {
-  const out = await ddb.send(new GetCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_THREADS, Key: { threadId } }));
-  return (out.Item as DiscussionThread) ?? null;
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const r = await prisma.discussionThread.findUnique({ where: { threadId } });
+  if (!r) return null;
+  return {
+    threadId: r.threadId,
+    marketId: r.marketId,
+    createdBy: r.createdBy,
+    status: toThreadStatus(String(r.status)),
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt ? r.updatedAt.toISOString() : undefined,
+  } satisfies DiscussionThread;
 }
 
 export async function listDiscussionThreadsByMarket(marketId: string) {
-  const out = await ddb.send(
-    new ScanCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_THREADS, FilterExpression: "marketId = :m", ExpressionAttributeValues: { ":m": marketId } })
-  );
-  const items = (out.Items as DiscussionThread[]) ?? [];
-  items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  return items;
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const rows = (await prisma.discussionThread.findMany({ where: { marketId }, orderBy: { createdAt: "desc" } })) as Array<{
+    threadId: string; marketId: string; createdBy: string; status: string; createdAt: Date; updatedAt: Date | null;
+  }>;
+  return rows.map((r: { threadId: string; marketId: string; createdBy: string; status: string; createdAt: Date; updatedAt: Date | null; }) => ({
+    threadId: r.threadId,
+    marketId: r.marketId,
+    createdBy: r.createdBy,
+    status: toThreadStatus(String(r.status)),
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt ? r.updatedAt.toISOString() : undefined,
+  })) satisfies DiscussionThread[];
 }
 
 export async function putDiscussionMessage(m: DiscussionMessage) {
-  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_MESSAGES, Item: m }));
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.discussionMessage.create({
+    data: {
+      id: m.id,
+      threadId: m.threadId,
+      userId: m.userId,
+      role: m.role,
+      content: m.content,
+      attachments: (m.attachments ?? null) as unknown as Record<string, unknown>[] | null,
+      createdAt: new Date(m.createdAt),
+    },
+  });
 }
 
 export async function listDiscussionMessagesByThread(threadId: string) {
-  const out = await ddb.send(
-    new ScanCommand({ TableName: env.DYNAMODB_TABLE_DISCUSSION_MESSAGES, FilterExpression: "threadId = :t", ExpressionAttributeValues: { ":t": threadId } })
-  );
-  const items = (out.Items as DiscussionMessage[]) ?? [];
-  items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  return items;
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const rows = (await prisma.discussionMessage.findMany({ where: { threadId }, orderBy: { createdAt: "asc" } })) as Array<{
+    id: string; threadId: string; userId: string; role: string; content: string; attachments: unknown; createdAt: Date;
+  }>;
+  return rows.map((r: { id: string; threadId: string; userId: string; role: string; content: string; attachments: unknown; createdAt: Date; }) => ({
+    id: r.id,
+    threadId: r.threadId,
+    userId: r.userId,
+    role: toMessageRole(String(r.role)),
+    content: r.content,
+    attachments: (r.attachments as { type: string; url?: string; dataUrl?: string }[] | null) ?? undefined,
+    createdAt: r.createdAt.toISOString(),
+  })) satisfies DiscussionMessage[];
 }
 
 export async function putMemoryPointer(p: MemoryPointer) {
-  await ddb.send(new PutCommand({ TableName: env.DYNAMODB_TABLE_MEMORY_POINTERS, Item: p }));
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.memoryPointer.create({
+    data: {
+      id: p.id,
+      ownerType: p.ownerType,
+      ownerId: p.ownerId,
+      provider: p.provider,
+      vectorId: p.vectorId ?? null,
+      graphNodeId: p.graphNodeId ?? null,
+      tags: p.tags ?? null,
+      metadata: (p.metadata as unknown) ?? null,
+      createdAt: new Date(p.createdAt),
+    },
+  });
 }
 
 export async function listMemoryPointers(ownerType: MemoryPointer["ownerType"], ownerId: string) {
-  const out = await ddb.send(
-    new ScanCommand({
-      TableName: env.DYNAMODB_TABLE_MEMORY_POINTERS,
-      FilterExpression: "ownerType = :ot AND ownerId = :oid",
-      ExpressionAttributeValues: { ":ot": ownerType, ":oid": ownerId },
-    })
-  );
-  return (out.Items as MemoryPointer[]) ?? [];
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const rows = await prisma.memoryPointer.findMany({ where: { ownerType: ownerType as any, ownerId } });
+  return rows.map((r: { id: string; ownerType: string; ownerId: string; provider: string; vectorId: string | null; graphNodeId: string | null; tags: string[] | null; metadata: unknown; createdAt: Date; }) => ({
+    id: r.id,
+    ownerType: r.ownerType as MemoryPointer["ownerType"],
+    ownerId: r.ownerId,
+    provider: r.provider as "mem0",
+    vectorId: r.vectorId ?? undefined,
+    graphNodeId: r.graphNodeId ?? undefined,
+    tags: (r.tags ?? undefined) as string[] | undefined,
+    metadata: (r.metadata as unknown as Record<string, any>) ?? undefined,
+    createdAt: r.createdAt.toISOString(),
+  }));
 }
