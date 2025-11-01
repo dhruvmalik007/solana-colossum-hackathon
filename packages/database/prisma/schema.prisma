@@ -195,7 +195,7 @@ model MemoryPointer {
   provider   Provider
   vectorId   String?
   graphNodeId String?
-  tags       String[]?
+  tags       String[]
   metadata   Json?
   createdAt  DateTime
 

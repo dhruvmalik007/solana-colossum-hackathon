@@ -19,6 +19,7 @@
     "@solana/web3.js": "^1.98.4",
     "@sentry/nextjs": "^10.17.0",
     "@t3-oss/env-nextjs": "^0.13.8",
+    "jose": "^5.9.6",
     "ai": "^3.3.25",
     "mem0ai": "^2.1.38",
     "@repo/ui": "workspace:*",

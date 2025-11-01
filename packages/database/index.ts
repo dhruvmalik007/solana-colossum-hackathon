@@ -1,5 +1,6 @@
 
 import { getPrisma } from "./prismaClient";
+import { Prisma } from "@prisma/client";
 
 
 export type MarketStatus = "Draft" | "Active" | "Resolving" | "Resolved";
@@ -275,6 +276,38 @@ export async function getCreatorProfile(userId: string) {
 }
 
 /**
+ * Upsert a creator profile.
+ * Ensures an idempotent write keyed by userId.
+ */
+export async function putCreatorProfile(profile: CreatorProfile): Promise<void> {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.creatorProfile.upsert({
+    where: { userId: profile.userId },
+    create: {
+      userId: profile.userId,
+      walletAddress: profile.walletAddress,
+      role: profile.role,
+      portfolioConnected: profile.portfolioConnected,
+      portfolioStats: profile.portfolioStats as Prisma.JsonObject,
+      profileData: profile.profileData as Prisma.JsonObject,
+      verificationStatus: profile.verificationStatus,
+      createdAt: new Date(profile.createdAt),
+      updatedAt: new Date(profile.updatedAt),
+    },
+    update: {
+      walletAddress: profile.walletAddress,
+      role: profile.role,
+      portfolioConnected: profile.portfolioConnected,
+      portfolioStats: profile.portfolioStats as Prisma.JsonObject,
+      profileData: profile.profileData as Prisma.JsonObject,
+      verificationStatus: profile.verificationStatus,
+      updatedAt: new Date(profile.updatedAt),
+    },
+  });
+}
+
+/**
  * Insert a comment using Prisma + Neon.
  */
 export async function putComment(comment: Comment) {
@@ -458,7 +491,7 @@ export async function putDiscussionMessage(m: DiscussionMessage) {
       userId: m.userId,
       role: m.role,
       content: m.content,
-      attachments: (m.attachments ?? null) as unknown as Record<string, unknown>[] | null,
+      attachments: m.attachments as Prisma.JsonArray,
       createdAt: new Date(m.createdAt),
     },
   });
@@ -492,8 +525,8 @@ export async function putMemoryPointer(p: MemoryPointer) {
       provider: p.provider,
       vectorId: p.vectorId ?? null,
       graphNodeId: p.graphNodeId ?? null,
-      tags: p.tags ?? null,
-      metadata: (p.metadata as unknown) ?? null,
+      tags: p.tags as Prisma.JsonArray as string[],
+      metadata: p.metadata as Prisma.JsonObject,
       createdAt: new Date(p.createdAt),
     },
   });

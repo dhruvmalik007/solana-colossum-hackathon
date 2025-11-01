@@ -1,4 +1,4 @@
-import "server-only";
+"use server"
 
 import { PrismaClient } from "@prisma/client";
 import { env } from "./keys";
@@ -11,8 +11,8 @@ let prismaSingleton: PrismaClient | null = null;
  * Returns null if DATABASE_URL is not set.
  * Ensures safe reuse across hot reloads and serverless invocations.
  */
-export function getPrisma(): PrismaClient | null {
-  if (!env.DATABASE_URL) return null;
+export function getPrisma(): PrismaClient {
+  if (!env.DATABASE_URL) throw new Error("DATABASE_URL not set");
   if (prismaSingleton) return prismaSingleton;
   prismaSingleton = new PrismaClient({
     datasources: {
