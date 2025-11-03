@@ -37,3 +37,8 @@ yarn-error.log*
 .DS_Store
 *.pem
 cloudformation/parameters-*.json
+
+
+## currently avoiding windsurf rules ( for your personal descrption only).
+
+.windsurf/**

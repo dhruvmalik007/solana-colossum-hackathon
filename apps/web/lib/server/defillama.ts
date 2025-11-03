@@ -1,5 +1,4 @@
-import 'server-only';
-
+"use server"
 import { withFileCache } from "../server/cache";
 import { withDynamoDBCache } from "../server/dynamodb-cache";
 

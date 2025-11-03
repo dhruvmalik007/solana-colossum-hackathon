@@ -10,7 +10,7 @@ async function buildSnapshot(slug: string) {
   const [orders, trades] = await Promise.all([listOrdersByMarket(slug), listTradesByMarket(slug)]);
   const bids = aggregateLevels(orders.filter((o) => o.side === "Buy")).sort((a, b) => b.price - a.price).slice(0, 16);
   const asks = aggregateLevels(orders.filter((o) => o.side === "Sell")).sort((a, b) => a.price - b.price).slice(0, 16);
-  const recentTrades = trades.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1)).slice(0, 20).map((t) => ({ side: t.side === "Buy" ? "buy" : "sell", price: t.avgPrice, size: t.size, ts: Date.parse(t.createdAt) }));
+  const recentTrades = trades.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1)).slice(0, 20).map((t) => ({ side: t.side === "Buy" ? "buy" : "sell", price: t.price, size: t.size, ts: Date.parse(t.createdAt) }));
   return { bids, asks, recentTrades };
 }
 

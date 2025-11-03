@@ -1,4 +1,4 @@
-import { ddb } from "@repo/database";
+// import { ddb } from "@repo/database";
 
 // export const GET = async () => {
 //   const newPage = await ddb.put({

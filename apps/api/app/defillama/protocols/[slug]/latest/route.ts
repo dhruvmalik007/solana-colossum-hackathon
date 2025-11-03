@@ -25,11 +25,12 @@ export type SnapshotProtocolDetail = SnapshotMeta & {
  */
 export async function GET(
   _req: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ): Promise<Response> {
   try {
+    const { slug } = await params;
     const prefix = getBlobPrefix();
-    const rel = `${prefix}/defillama/protocols/${params.slug}/latest.json`;
+    const rel = `${prefix}/defillama/protocols/${slug}/latest.json`;
     const json = await fetchBlobJson<SnapshotProtocolDetail>(rel);
     return NextResponse.json(json);
   } catch (error) {

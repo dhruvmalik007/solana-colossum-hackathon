@@ -548,3 +548,58 @@ export async function listMemoryPointers(ownerType: MemoryPointer["ownerType"], 
     createdAt: r.createdAt.toISOString(),
   }));
 }
+
+// Add missing exports for API compatibility
+export async function listOrdersByMarket(marketId: string) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const rows = await prisma.order.findMany({ where: { marketId }, orderBy: { createdAt: "desc" } });
+  return rows.map((r: any) => ({
+    id: r.id,
+    marketId: r.marketId,
+    side: r.side,
+    price: Number(r.price),
+    size: Number(r.size),
+    remaining: Number(r.remaining),
+    status: r.status,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+export async function listTradesByMarket(marketId: string) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const rows = await prisma.trade.findMany({ where: { marketId }, orderBy: { createdAt: "desc" } });
+  return rows.map((r: any) => ({
+    id: r.id,
+    marketId: r.marketId,
+    side: r.side,
+    price: Number(r.avgPrice),
+    size: Number(r.size),
+    feesPaid: Number(r.feesPaid),
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+export async function putOrder(order: {
+  id: string;
+  marketId: string;
+  side: "Buy" | "Sell";
+  price: number;
+  size: number;
+}) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  await prisma.order.create({
+    data: {
+      id: order.id,
+      marketId: order.marketId,
+      side: order.side,
+      price: order.price,
+      size: order.size,
+      remaining: order.size,
+      status: "Open",
+      createdAt: new Date(),
+    },
+  });
+}

@@ -2,17 +2,13 @@
 
 
 ## models to be used:
-- openai / perplexity sonar
-
-- time series models : AWS chrnos for the time series prediction (from HF inference API Kit).
-
-- Optional: Multimodal model in order to understand the user query (voice / text / image etc) in order to fetch the correct result.
-
-
+- Openai / perplexity sonar
+- Time series models: AWS chrnos for the time series prediction (from HF inference API Kit).
+- Optional: Multimodal model in order to understand the user query (voice / text / image etc) in order to annotate the discussions. 
 
 
 ## data sources:
-- all the data being routed through the copilotUI Kit integration. 
+- All the data is being routed through the copilotUI Kit integration. 
     - defillama based protocol metrics 
     - more precise oracle data streams / indexer defined fetching of the wrappers for getting program level information.
         - TODO: integrate the indexer data fusion within the [@repo/ai](../../packages/ai) Copilot based interation for the reasoning 

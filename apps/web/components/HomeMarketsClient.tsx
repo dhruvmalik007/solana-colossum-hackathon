@@ -35,7 +35,7 @@ export default function HomeMarketsClient({ category, q, status, sort }: { categ
       if (sort) params.set("sort", sort);
       params.set("limit", "24");
       if (cursor && Number(cursor) > 0) params.set("cursor", cursor);
-      const base = API_BASE;
+      const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3002';
       return `${base}/markets?${params.toString()}`;
     },
     [category, q, status, sort]
