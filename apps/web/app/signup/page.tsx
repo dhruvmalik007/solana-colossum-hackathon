@@ -7,10 +7,16 @@ import { Button } from "@repo/ui/components/ui/button";
 import { Separator } from "@repo/ui/components/ui/separator";
 import { Input } from "@repo/ui/components/ui/input";
 import { Label } from "@repo/ui/components/ui/label";
+import { Spinner } from "@repo/ui/components/ui/spinner";
 import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 
-export default function SignupPage(): any {
+/**
+ * SignupPage
+ * Renders a sign-up form that delegates auth to Privy. Shows loading states during login method selection
+ * and redirects to onboarding when already authenticated.
+ */
+export default function SignupPage(): React.ReactNode {
   const router = useRouter();
   const { login, authenticated } = usePrivy();
   const [email, setEmail] = React.useState("");
@@ -23,14 +29,18 @@ export default function SignupPage(): any {
     if (authenticated) router.replace("/creator-onboarding");
   }, [authenticated, router]);
 
-  async function doLogin(method: "email" | "google" | "wallet") {
+  /**
+   * Initiates Privy login/signup with the given method and shows a loading state.
+   */
+  async function doLogin(method: "email" | "google" | "wallet"): Promise<void> {
     setErr(null);
     setBusy(method);
     try {
       // Privy handles both signup and login with the same modal.
       await login({ loginMethods: [method] });
-    } catch (e: any) {
-      setErr(e?.message ?? "Signup failed");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Signup failed";
+      setErr(msg);
     } finally {
       setBusy(null);
     }
@@ -38,7 +48,7 @@ export default function SignupPage(): any {
 
   return (
     <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
-      <Card className="w-full max-w-md shadow-md transition-shadow hover:shadow-lg">
+      <Card className="w-full max-w-md shadow-sm transition-shadow hover:shadow-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl">Sign up</CardTitle>
           <CardDescription>Create a Perplexity Markets account to start trading</CardDescription>
@@ -56,8 +66,12 @@ export default function SignupPage(): any {
             <Label>Password</Label>
             <Input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
-          <Button className="w-full" disabled={!!busy} onClick={() => doLogin("email")}>
-            {busy === "email" ? "Creating…" : "Create account"}
+          <Button className="w-full" disabled={!!busy} onClick={() => doLogin("email")} aria-busy={busy === "email"}>
+            {busy === "email" ? (
+              <><Spinner className="mr-2 h-4 w-4" /> Creating…</>
+            ) : (
+              "Create account"
+            )}
           </Button>
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
@@ -68,11 +82,11 @@ export default function SignupPage(): any {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Button variant="outline" disabled={!!busy} onClick={() => doLogin("google")}>
-              {busy === "google" ? "Loading…" : "Google"}
+            <Button variant="outline" disabled={!!busy} onClick={() => doLogin("google")} aria-busy={busy === "google"}>
+              {busy === "google" ? (<><Spinner className="mr-2 h-4 w-4" /> Loading…</>) : "Google"}
             </Button>
-            <Button variant="outline" disabled={!!busy} onClick={() => doLogin("wallet")}>
-              {busy === "wallet" ? "Loading…" : "Phantom"}
+            <Button variant="outline" disabled={!!busy} onClick={() => doLogin("wallet")} aria-busy={busy === "wallet"}>
+              {busy === "wallet" ? (<><Spinner className="mr-2 h-4 w-4" /> Loading…</>) : "Phantom"}
             </Button>
           </div>
           {err ? <div className="text-xs text-rose-500">{err}</div> : null}

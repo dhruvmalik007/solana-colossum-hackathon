@@ -28,30 +28,19 @@ export function Header({ rightSlot }: { rightSlot?: React.ReactNode }) {
               </Link>
             </MenubarMenu>
             
-            <MenubarMenu>
-              <Link href="/ideas">
-                <MenubarTrigger className="cursor-pointer">Ideas</MenubarTrigger>
-              </Link>
-            </MenubarMenu>
             
             <MenubarMenu>
               <MenubarTrigger className="cursor-pointer">About</MenubarTrigger>
               <MenubarContent>
-                <Link href="/docs">
                   <MenubarItem className="cursor-pointer">Docs</MenubarItem>
-                </Link>
-                <Link href="/team">
                   <MenubarItem className="cursor-pointer">Team</MenubarItem>
-                </Link>
               </MenubarContent>
             </MenubarMenu>
 
             <MenubarMenu>
               <MenubarTrigger className="cursor-pointer">Account</MenubarTrigger>
               <MenubarContent>
-                <Link href="/login">
                   <MenubarItem className="cursor-pointer">Log in</MenubarItem>
-                </Link>
                 <MenubarSeparator />
                 <Link href="/signup">
                   <MenubarItem className="cursor-pointer">

@@ -10,6 +10,7 @@ import { Button } from "@repo/ui/components/ui/button";
 import { Input } from "@repo/ui/components/ui/input";
 import { Label } from "@repo/ui/components/ui/label";
 import { Textarea } from "@repo/ui/components/ui/textarea";
+import { Spinner } from "@repo/ui/components/ui/spinner";
 import type { CreatorRole, CreatorOnboardingStep, PortfolioData } from "../../lib/types/creator";
 import { API_BASE } from "@/lib/client/api";
 
@@ -21,6 +22,13 @@ const steps = [
   { id: "complete", label: "Complete" },
 ];
 
+const ROLES = ["creator", "participant", "both"] as const;
+function cycleRole(index: number, delta: number): CreatorRole {
+  const len = ROLES.length;
+  const next = (index + delta + len) % len;
+  return ROLES[next] as CreatorRole;
+}
+
 export default function CreatorOnboardingPage() {
   const router = useRouter();
   const { user } = usePrivy();
@@ -29,7 +37,7 @@ export default function CreatorOnboardingPage() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [role, setRole] = React.useState<CreatorRole>("both");
+  const [role, setRole] = React.useState<CreatorRole>("creator");
   const [portfolioData, setPortfolioData] = React.useState<PortfolioData | null>(null);
   const [displayName, setDisplayName] = React.useState("");
   const [bio, setBio] = React.useState("");
@@ -71,8 +79,9 @@ export default function CreatorOnboardingPage() {
       const data = await res.json();
       setPortfolioData(data.data);
       setCurrent(2);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to fetch portfolio data");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to fetch portfolio data";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -105,8 +114,9 @@ export default function CreatorOnboardingPage() {
 
       if (!res.ok) throw new Error(`Profile creation failed: ${res.status}`);
       router.push("/markets");
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to complete onboarding");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to complete onboarding";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -116,8 +126,8 @@ export default function CreatorOnboardingPage() {
     <ProtectedRoute>
       <div className="space-y-6 max-w-2xl mx-auto">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Creator Onboarding</h1>
-          <p className="text-sm text-muted-foreground mt-2">Set up your profile and verify your credentials</p>
+          <h1 className="text-3xl font-bold tracking-tight">Onboarding</h1>
+          <p className="text-sm text-muted-foreground mt-2">Choose your role, connect your portfolio, and set up your profile</p>
         </div>
 
         <Stepper steps={steps} currentStep={current} onStepChange={setCurrent} />
@@ -128,23 +138,44 @@ export default function CreatorOnboardingPage() {
               <CardTitle>Select Your Role</CardTitle>
               <CardDescription>Choose how you want to participate in prediction markets</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {(['creator', 'participant', 'both'] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRole(r)}
-                  className={`w-full p-4 border rounded-lg text-left transition-colors ${
-                    role === r ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-accent'
-                  }`}
-                >
-                  <div className="font-semibold">{r.charAt(0).toUpperCase() + r.slice(1)}</div>
-                  <div className="text-xs opacity-75 mt-1">
-                    {r === 'creator' && 'Create and manage prediction markets'}
-                    {r === 'participant' && 'Trade and participate in markets'}
-                    {r === 'both' && 'Create markets and trade'}
-                  </div>
-                </button>
-              ))}
+            <CardContent>
+              <div
+                role="radiogroup"
+                aria-label="Select your role"
+                className="space-y-3"
+              >
+                {ROLES.map((r, idx) => {
+                  const selected = role === r;
+                  return (
+                    <div
+                      key={r}
+                      role="radio"
+                      aria-checked={selected}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => setRole(r)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") setRole(r);
+                        if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+                          setRole(cycleRole(idx, 1));
+                        }
+                        if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+                          setRole(cycleRole(idx, -1));
+                        }
+                      }}
+                      className={`w-full p-4 border rounded-lg cursor-pointer transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                        selected ? "bg-primary text-primary-foreground border-primary" : "hover:bg-accent"
+                      }`}
+                    >
+                      <div className="font-semibold">{r.charAt(0).toUpperCase() + r.slice(1)}</div>
+                      <div className="text-xs opacity-75 mt-1">
+                        {r === "creator" && "Create and manage prediction markets"}
+                        {r === "participant" && "Trade and participate in markets"}
+                        {r === "both" && "Create markets and trade"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         )}
@@ -163,8 +194,8 @@ export default function CreatorOnboardingPage() {
               <p className="text-sm text-muted-foreground">
                 We'll analyze your wallet to verify your experience with DeFi protocols and trading history.
               </p>
-              <Button onClick={fetchPortfolioData} disabled={loading || !primaryWallet} className="w-full">
-                {loading ? "Analyzing Portfolio..." : "Fetch Portfolio Data"}
+              <Button onClick={fetchPortfolioData} disabled={loading || !primaryWallet} className="w-full" aria-busy={loading}>
+                {loading ? (<><Spinner className="mr-2 h-4 w-4" /> Analyzing Portfolio...</>) : "Fetch Portfolio Data"}
               </Button>
               {error && <div className="text-xs text-rose-500">{error}</div>}
             </CardContent>
@@ -269,7 +300,7 @@ export default function CreatorOnboardingPage() {
         )}
 
         {error && current < 4 && (
-          <div className="p-3 bg-rose-50 dark:bg-rose-950 rounded-lg border border-rose-200 dark:border-rose-800">
+          <div className="p-3 bg-rose-50 dark:bg-rose-950 rounded-lg border border-rose-200 dark:border-rose-800" aria-live="polite">
             <div className="text-sm text-rose-900 dark:text-rose-100">{error}</div>
           </div>
         )}
@@ -285,6 +316,7 @@ export default function CreatorOnboardingPage() {
           {current < steps.length - 1 ? (
             <Button
               disabled={!canNext || loading}
+              aria-busy={loading}
               onClick={() => {
                 if (current === 1) {
                   fetchPortfolioData();
@@ -293,11 +325,11 @@ export default function CreatorOnboardingPage() {
                 }
               }}
             >
-              {loading ? "Loading..." : "Continue"}
+              {loading ? (<><Spinner className="mr-2 h-4 w-4" /> Loading...</>) : "Continue"}
             </Button>
           ) : (
-            <Button onClick={onComplete} disabled={loading}>
-              {loading ? "Completing..." : "Go to Markets"}
+            <Button onClick={onComplete} disabled={loading} aria-busy={loading}>
+              {loading ? (<><Spinner className="mr-2 h-4 w-4" /> Completing...</>) : "Go to Markets"}
             </Button>
           )}
         </div>
