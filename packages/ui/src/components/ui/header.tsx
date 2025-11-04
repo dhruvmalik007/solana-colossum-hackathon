@@ -11,8 +11,10 @@ import {
   MenubarSeparator
 } from "./menubar";
 import { ThemeToggle } from "./theme-toggle";
+import { useRouter } from "next/navigation";
 
 export function Header({ rightSlot }: { rightSlot?: React.ReactNode }) {
+  const router = useRouter();
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
@@ -40,7 +42,7 @@ export function Header({ rightSlot }: { rightSlot?: React.ReactNode }) {
             <MenubarMenu>
               <MenubarTrigger className="cursor-pointer">Account</MenubarTrigger>
               <MenubarContent>
-                  <MenubarItem className="cursor-pointer">Log in</MenubarItem>
+                  <MenubarItem className="cursor-pointer" onClick={() => {router.push("/login")}}>Log in</MenubarItem>
                 <MenubarSeparator />
                 <Link href="/signup">
                   <MenubarItem className="cursor-pointer">

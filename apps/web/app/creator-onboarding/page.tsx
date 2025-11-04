@@ -11,6 +11,10 @@ import { Input } from "@repo/ui/components/ui/input";
 import { Label } from "@repo/ui/components/ui/label";
 import { Textarea } from "@repo/ui/components/ui/textarea";
 import { Spinner } from "@repo/ui/components/ui/spinner";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@repo/ui/components/ui/tabs";
+import { Badge } from "@repo/ui/components/ui/badge";
+import { Separator } from "@repo/ui/components/ui/separator";
+import { ShineBorder } from "@repo/ui/components/ui/shine-border";
 import type { CreatorRole, CreatorOnboardingStep, PortfolioData } from "../../lib/types/creator";
 import { API_BASE } from "@/lib/client/api";
 
@@ -45,12 +49,23 @@ export default function CreatorOnboardingPage() {
 
   const primaryWallet = wallets?.[0];
 
+  // Solana wallet (Phantom) detection and connection state
+  const [solanaDetected, setSolanaDetected] = React.useState(false);
+  const [solanaPubkey, setSolanaPubkey] = React.useState<string | null>(null);
+  const [connectingSol, setConnectingSol] = React.useState(false);
+
+  // EVM Safe deployment state
+  const [deployingSafe, setDeployingSafe] = React.useState(false);
+  const [safeAddress, setSafeAddress] = React.useState<string | null>(null);
+  const [activeConnectTab, setActiveConnectTab] = React.useState<"solana" | "safe">("solana");
+
   const canNext = React.useMemo(() => {
     switch (current) {
       case 0:
         return !!role;
       case 1:
-        return !!portfolioData;
+        // Allow proceeding if portfolio fetched OR a Safe has been deployed
+        return !!portfolioData || !!safeAddress;
       case 2:
         return true;
       case 3:
@@ -58,10 +73,78 @@ export default function CreatorOnboardingPage() {
       default:
         return true;
     }
-  }, [current, role, portfolioData, displayName, bio]);
+  }, [current, role, portfolioData, displayName, bio, safeAddress]);
+
+  // Detect Phantom (or compatible) on mount
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const w = window as any;
+    const provider = w?.solana;
+    if (provider && provider.isPhantom) {
+      setSolanaDetected(true);
+      const handleConnect = () => setSolanaPubkey(provider.publicKey?.toString() ?? null);
+      const handleDisconnect = () => setSolanaPubkey(null);
+      provider.on?.("connect", handleConnect);
+      provider.on?.("disconnect", handleDisconnect);
+      if (provider.isConnected && provider.publicKey) setSolanaPubkey(provider.publicKey.toString());
+      return () => {
+        provider.off?.("connect", handleConnect);
+        provider.off?.("disconnect", handleDisconnect);
+      };
+    }
+    // If no Phantom detected, show Safe tab by default
+    if (!provider || !provider.isPhantom) setActiveConnectTab("safe");
+  }, []);
+
+  async function connectSolana() {
+    try {
+      setConnectingSol(true);
+      setError(null);
+      const w = window as any;
+      const provider = w?.solana;
+      if (!provider) throw new Error("Phantom wallet not detected");
+      const res = await provider.connect();
+      const pk = res?.publicKey?.toString?.() ?? provider.publicKey?.toString?.() ?? null;
+      setSolanaPubkey(pk);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to connect wallet";
+      setError(msg);
+    } finally {
+      setConnectingSol(false);
+    }
+  }
+
+  async function disconnectSolana() {
+    try {
+      const w = window as any;
+      const provider = w?.solana;
+      await provider?.disconnect?.();
+      setSolanaPubkey(null);
+    } catch {}
+  }
+
+  async function deploySafe() {
+    setDeployingSafe(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/polymarket/safe/deploy`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Failed to deploy Safe (${res.status})`);
+      const addr = data?.proxyAddress || data?.safeAddress || data?.address;
+      setSafeAddress(addr ?? null);
+      // Advance to credentials step if Safe deployed successfully
+      setCurrent(2);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to deploy Safe";
+      setError(msg);
+    } finally {
+      setDeployingSafe(false);
+    }
+  }
 
   async function fetchPortfolioData() {
-    if (!primaryWallet) {
+    const address = solanaPubkey ?? primaryWallet?.address;
+    if (!address) {
       setError("No wallet connected");
       return;
     }
@@ -72,7 +155,7 @@ export default function CreatorOnboardingPage() {
       const res = await fetch(`${API_BASE}/portfolio`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ walletAddress: primaryWallet.address }),
+        body: JSON.stringify({ walletAddress: address }),
       });
 
       if (!res.ok) throw new Error(`Portfolio fetch failed: ${res.status}`);
@@ -181,23 +264,83 @@ export default function CreatorOnboardingPage() {
         )}
 
         {current === 1 && (
-          <Card>
+          <Card className="border-muted-foreground/20">
             <CardHeader>
               <CardTitle>Connect Your Portfolio</CardTitle>
               <CardDescription>Verify your on-chain credentials and experience</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="text-sm font-semibold">Connected Wallet</div>
-                <div className="text-xs text-muted-foreground mt-1 font-mono break-all">{primaryWallet?.address}</div>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                We'll analyze your wallet to verify your experience with DeFi protocols and trading history.
-              </p>
-              <Button onClick={fetchPortfolioData} disabled={loading || !primaryWallet} className="w-full" aria-busy={loading}>
-                {loading ? (<><Spinner className="mr-2 h-4 w-4" /> Analyzing Portfolio...</>) : "Fetch Portfolio Data"}
-              </Button>
-              {error && <div className="text-xs text-rose-500">{error}</div>}
+            <CardContent className="space-y-5">
+              <Tabs value={activeConnectTab} onValueChange={(v) => setActiveConnectTab(v as any)}>
+                <TabsList className="grid grid-cols-2 w-full rounded-xl bg-muted p-1">
+                  <TabsTrigger className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-2" value="solana">Solana Wallet</TabsTrigger>
+                  <TabsTrigger className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-2" value="safe">Deploy EVM Safe</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="solana" className="space-y-4">
+                  <ShineBorder className="rounded-lg">
+                    <div className="p-4 rounded-lg bg-background">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-semibold">Detected Wallet</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {solanaDetected ? "Phantom detected" : "No Phantom detected. Install Phantom to continue."}
+                          </div>
+                        </div>
+                        <Badge variant={solanaPubkey ? "default" : "secondary"}>
+                          {solanaPubkey ? "Connected" : "Not Connected"}
+                        </Badge>
+                      </div>
+                      {solanaPubkey && (
+                        <div className="text-xs text-muted-foreground mt-2 font-mono break-all">{solanaPubkey}</div>
+                      )}
+                    </div>
+                  </ShineBorder>
+                  <div className="flex gap-2">
+                    {!solanaPubkey ? (
+                      <Button onClick={connectSolana} disabled={!solanaDetected || connectingSol} aria-busy={connectingSol}>
+                        {connectingSol ? (<><Spinner className="mr-2 h-4 w-4" /> Connecting...</>) : "Connect Phantom"}
+                      </Button>
+                    ) : (
+                      <Button variant="outline" onClick={disconnectSolana}>Disconnect</Button>
+                    )}
+                    <Button onClick={fetchPortfolioData} disabled={loading || !(solanaPubkey || primaryWallet)} className="ml-auto" aria-busy={loading}>
+                      {loading ? (<><Spinner className="mr-2 h-4 w-4" /> Analyzing Portfolio...</>) : "Fetch Portfolio Data"}
+                    </Button>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="safe" className="space-y-4">
+                  <ShineBorder className="rounded-lg">
+                    <div className="p-4 rounded-lg bg-background">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-semibold">Account Abstraction Safe  creation (for EVm chains)</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Deploy a Safe smart account on Polygon using our relayer. This will be used for CLOB trading and custody.
+                          </div>
+                        </div>
+                        <Badge variant={safeAddress ? "default" : "secondary"}>{safeAddress ? "Deployed" : "Not Deployed"}</Badge>
+                      </div>
+                      {safeAddress && (
+                        <div className="mt-2 text-xs font-mono break-all">Deployed Safe: {safeAddress}</div>
+                      )}
+                    </div>
+                  </ShineBorder>
+                  <div className="flex gap-2">
+                    <Button onClick={deploySafe} disabled={deployingSafe} aria-busy={deployingSafe}>
+                      {deployingSafe ? (<><Spinner className="mr-2 h-4 w-4" /> Deploying...</>) : "Deploy Safe on Polygon"}
+                    </Button>
+                    {safeAddress && (
+                      <Button variant="outline" onClick={() => setCurrent(2)}>Use This Safe</Button>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
+              {error && (
+                <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  {error}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -308,6 +451,8 @@ export default function CreatorOnboardingPage() {
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
+            size="lg"
+            className="rounded-lg"
             disabled={current === 0 || loading}
             onClick={() => setCurrent((c) => Math.max(0, c - 1))}
           >
@@ -315,6 +460,8 @@ export default function CreatorOnboardingPage() {
           </Button>
           {current < steps.length - 1 ? (
             <Button
+              size="lg"
+              className="rounded-lg"
               disabled={!canNext || loading}
               aria-busy={loading}
               onClick={() => {
@@ -328,7 +475,7 @@ export default function CreatorOnboardingPage() {
               {loading ? (<><Spinner className="mr-2 h-4 w-4" /> Loading...</>) : "Continue"}
             </Button>
           ) : (
-            <Button onClick={onComplete} disabled={loading} aria-busy={loading}>
+            <Button size="lg" className="rounded-lg" onClick={onComplete} disabled={loading} aria-busy={loading}>
               {loading ? (<><Spinner className="mr-2 h-4 w-4" /> Completing...</>) : "Go to Markets"}
             </Button>
           )}

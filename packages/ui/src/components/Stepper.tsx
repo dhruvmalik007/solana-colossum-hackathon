@@ -19,7 +19,7 @@ export function Stepper({
 }) {
   return (
     <div className={cn("w-full", className)}>
-      <ol className="grid grid-cols-1 gap-3 md:grid-cols-6">
+      <ol className="grid grid-cols-1 gap-3 md:grid-cols-5">
         {steps.map((s, i) => {
           const state = i < currentStep ? "complete" : i === currentStep ? "active" : "pending";
           return (

@@ -29,6 +29,46 @@ function toMarketStatus(s: string): MarketStatus {
   }
 }
 
+/**
+ * List creator profiles ordered by updatedAt desc.
+ * Supports basic pagination and optional case-insensitive search across displayName and walletAddress.
+ */
+export async function listCreatorProfiles(params?: { page?: number; pageSize?: number; q?: string }) {
+  const prisma = getPrisma();
+  if (!prisma) throw new Error("Prisma client not available");
+  const page = Math.max(1, Number(params?.page ?? 1));
+  const pageSize = Math.min(50, Math.max(1, Number(params?.pageSize ?? 20)));
+  const q = params?.q?.trim();
+  const where = q
+    ? {
+        OR: [
+          { walletAddress: { contains: q, mode: "insensitive" as const } },
+          { profileData: { path: ["displayName"], string_contains: q } as any },
+        ],
+      }
+    : undefined;
+
+  // Note: JSON path filter may vary across providers; if unsupported, it will be ignored.
+  const rows = await prisma.creatorProfile.findMany({
+    where: where as any,
+    orderBy: { updatedAt: "desc" },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+
+  return rows.map((r: any) => ({
+    userId: r.userId,
+    walletAddress: r.walletAddress,
+    role: r.role as "creator" | "participant" | "both",
+    portfolioConnected: Boolean(r.portfolioConnected),
+    portfolioStats: (r.portfolioStats as CreatorProfile["portfolioStats"]) ?? undefined,
+    profileData: (r.profileData as CreatorProfile["profileData"]) ?? undefined,
+    verificationStatus: r.verificationStatus as "pending" | "verified" | "rejected",
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  })) satisfies CreatorProfile[];
+}
+
 function toSide(s: string): "Buy" | "Sell" {
   return s === "Sell" ? "Sell" : "Buy";
 }

@@ -8,14 +8,20 @@ import type { ReactNode } from "react";
 export function ProtectedRoute({ children }: { children: ReactNode }): React.ReactNode {
   const { authenticated, isModalOpen } = usePrivy();
   const router = useRouter();
+  const [bootWait, setBootWait] = React.useState(true);
 
   useEffect(() => {
-    if (!isModalOpen && !authenticated) {
+    const t = setTimeout(() => setBootWait(false), 800); // allow session to hydrate on refresh
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (!bootWait && !isModalOpen && !authenticated) {
       router.push("/login");
     }
-  }, [authenticated, isModalOpen, router]);
+  }, [authenticated, isModalOpen, router, bootWait]);
 
-  if (isModalOpen) {
+  if (isModalOpen || bootWait) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
         <div className="text-center">

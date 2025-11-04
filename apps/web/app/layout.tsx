@@ -3,14 +3,13 @@ import React from "react";
 import localFont from "next/font/local";
 import "@repo/ui/globals.css";
 import "./globals.css";
-import { Header } from "@repo/ui/components/ui/header";
+import { HeaderWithFunds } from "../components/navigation/HeaderWithFunds";
 import { ThemeProvider } from "@repo/ui/components/theme-provider";
 import { TopLoadingBar } from "@repo/ui/components/top-loading-bar";
 import { PageTransition } from "@repo/ui/components/page-transition";
 import { CopilotProvider } from "@repo/ui/components/copilot/CopilotProvider";
 import { CopilotSidebarClient } from "../components/CopilotSidebarClient";
 import { SolanaProviders } from "../components/solana/SolanaProviders";
-import { UnifiedWalletButton } from "../components/solana/UnifiedWalletButton";
 import { PrivyProviders } from "../components/privy/PrivyProviders";
 
 const geistSans = localFont({
@@ -37,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <PrivyProviders>
               <SolanaProviders>
                 <TopLoadingBar />
-                <Header rightSlot={<UnifiedWalletButton />} />
+                <HeaderWithFunds />
                 <PageTransition>
                   <main className="container mx-auto px-4 py-6">{children}</main>
                 </PageTransition>
