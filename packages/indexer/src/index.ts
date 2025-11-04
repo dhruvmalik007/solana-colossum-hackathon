@@ -1,17 +1,20 @@
-import { Connection, PublicKey } from "@solana/web3.js";
-import WebSocket from "ws";
+import { Connection, PublicKey, Logs, Context } from "@solana/web3.js";
 import { putMarket, putTrade, type Market, type Order, type Trade } from "@repo/database";
 import { startDefiLlamaCron } from "./jobs/defillamaCron";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SolanaLogSubscriber } from "./connectionManager";
+import { startHourlyMetricsCron } from "./jobs/hourlyMetricsCron";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const RPC_URL = process.env.RPC_URL || "https://api.devnet.solana.com";
 const WS_URL = process.env.WS_URL || "wss://api.devnet.solana.com";
+const RPC_URLS = (process.env.RPC_URLS || RPC_URL).split(",").map((s) => s.trim()).filter(Boolean);
+const WS_URLS = (process.env.WS_URLS || WS_URL).split(",").map((s) => s.trim()).filter(Boolean);
 const PROGRAM_ID = process.env.PROGRAM_ID || "";
 
 // Event discriminators (first 8 bytes of sha256("event:" + name))
@@ -190,44 +193,24 @@ async function upsertEvent(event: EventLog) {
   }
 }
 
-async function subscribeToLogs() {
-  const ws = new WebSocket(WS_URL);
-  
-  ws.on("open", () => {
-    console.log(`[indexer] Connected to ${WS_URL}`);
-    ws.send(JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "logsSubscribe",
-      params: [
-        { mentions: [PROGRAM_ID] },
-        { commitment: "confirmed" }
-      ]
-    }));
+function startLogSubscriber() {
+  const endpoints = RPC_URLS.map((http, i) => ({ http, ws: WS_URLS[i] || undefined }));
+  const subscriber = new SolanaLogSubscriber({
+    endpoints,
+    programId: PROGRAM_ID,
+    commitment: "confirmed",
+    livenessTimeoutMs: Number(process.env.WS_LIVENESS_TIMEOUT_MS || 30000),
+    maxBackoffMs: Number(process.env.WS_MAX_BACKOFF_MS || 60000),
   });
-  
-  ws.on("message", async (data: Buffer) => {
-    const msg = JSON.parse(data.toString());
-    if (msg.method === "logsNotification") {
-      const { signature, slot, logs } = msg.params.result.value;
-      // Parse logs for events (simplified)
-      for (let i = 0; i < logs.length; i++) {
-        const event = decodeEvent(logs[i], signature, slot, i);
-        if (event) {
-          await upsertEvent(event);
-        }
-      }
+  const dispose = subscriber.start(async (entry: Logs, ctx?: Context) => {
+    const { signature, logs } = entry;
+    const slot = ctx?.slot ?? 0;
+    for (let i = 0; i < (logs?.length || 0); i++) {
+      const event = decodeEvent(logs![i]!, signature, slot, i);
+      if (event) await upsertEvent(event);
     }
   });
-  
-  ws.on("error", (err) => {
-    console.error("[indexer] WebSocket error:", err);
-  });
-  
-  ws.on("close", () => {
-    console.log("[indexer] WebSocket closed, reconnecting in 5s...");
-    setTimeout(subscribeToLogs, 5000);
-  });
+  return { dispose };
 }
 
 async function backfill(programId: string, startSlot?: number) {
@@ -260,14 +243,23 @@ async function main() {
   // Optional: backfill historical events
   // await backfill(PROGRAM_ID);
 
-  // Subscribe to live logs
-  await subscribeToLogs();
+  // Subscribe to live logs with resilient manager
+  startLogSubscriber();
 
   // Start DefiLlama offchain oracle cron -> writes structured snapshots to Vercel Blob
   const _defillamaCron = startDefiLlamaCron({
     prefix: process.env.BLOB_PREFIX,
     intervalMs: process.env.DEFI_LLAMA_CRON_MS ? Number(process.env.DEFI_LLAMA_CRON_MS) : undefined,
     token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
+
+  // Start hourly metrics cron combining DEX data with DefiLlama TVL
+  const _hourlyMetrics = startHourlyMetricsCron({
+    prefix: process.env.BLOB_PREFIX,
+    intervalMs: Number(process.env.METRICS_CRON_MS || 3_600_000),
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    rpcUrl: RPC_URL,
+    wsUrl: WS_URL,
   });
 }
 

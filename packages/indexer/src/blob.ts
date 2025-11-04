@@ -1,4 +1,7 @@
 import { put } from "@vercel/blob";
+import { config } from "dotenv";
+
+config();
 
 /**
  * Result returned by Vercel Blob `put()` for JSON uploads.
@@ -49,7 +52,7 @@ export async function uploadJson(
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json; charset=utf-8",
-    token: opts?.token,
+    token: opts?.token ?? process.env.BLOB_READ_WRITE_TOKEN,
     cacheControlMaxAge: opts?.cacheControlMaxAge,
   });
   return res as BlobUploadResult;
